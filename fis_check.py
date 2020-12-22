@@ -5,20 +5,33 @@ import json
 import logging
 import pickle
 import re
-from base64 import b64encode, b64decode
+from base64 import b64decode, b64encode
 from collections import defaultdict
 from functools import wraps
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 from urllib.parse import parse_qs, urlencode, urlparse
 
+import bs4.element
 import requests
 from bs4 import BeautifulSoup
-import bs4.element
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+
+
+class Event:
+    pass
+
+
+class Day:
+    pass
+
+
+class RaceResult:
+    pass
+
 
 # globals / defaults
 
@@ -141,7 +154,7 @@ def cal_date(date_str: str) -> List[datetime.date]:
     return date_list
 
 
-def visible_a(tag):
+def visible_a(tag) -> bool:
     return (
         tag
         and tag.name == "a"
@@ -151,7 +164,7 @@ def visible_a(tag):
     )
 
 
-def visible_div(tag):
+def visible_div(tag) -> bool:
     return (
         tag
         and tag.name == "div"
@@ -176,6 +189,7 @@ def scan_calendar(**kwargs):
     ]
 
     cal_body = cal.find("div", attrs={"id": "calendardata", "class": "tbody"})
+    events = list()
     for cal_row in cal_body.children:
         row_data = cal_row.find("div", attrs={"class": "g-row"})
         event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
@@ -192,13 +206,26 @@ def scan_calendar(**kwargs):
         ]
         event_data["gender"] = event_raw["Gender"].div.div.div.string
 
-        breakpoint()
-        pass
+        events.append(event_data)
+
+    return events
 
 
 def main():
+    # 0. pull calendar with sectorcode=AL, categorycode=WC, seasoncode=2021
+    # 1. parse calendar events
+    #     1.1 don't parse events not within target dates
+    # 2. Filter for events:
+    #     with results
+    #     within 2 weeks
+    #     discplinecode in (SG, DH)
+    #     2.1 put filter in calendar scan?
+    # 3. For each event, give minimal spoiler results:
+    #     binning bib by 10
+    #     Report highest bin in top 5
+    cal_events = scan_calendar()
     breakpoint()
-    scan_calendar()
+    pass
 
 
 if __name__ == "__main__":
