@@ -9,12 +9,13 @@ from base64 import b64decode, b64encode
 from collections import defaultdict
 from functools import wraps
 from pathlib import Path
-from typing import List, Optional, Union
-from urllib.parse import parse_qs, urlencode, urlparse
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import bs4.element
 import requests
 from bs4 import BeautifulSoup
+from requests.models import stream_decode_response_unicode
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -37,19 +38,16 @@ class RaceResult:
 
 base_url = "https://www.fis-ski.com/DB"
 url_targets = {
-    "calendar": {"url": f"{base_url}/alpine-skiing/calendar-results.html", "required": []},
-    "event_details": {
-        "url": f"{base_url}/general/event-details.html",
-        "required": ("sectorcode", "eventid", "seasoncode"),
-    },
-    "race_results": {"url": f"{base_url}/general/results", "required": ("sectorcode", "raceid")},
+    "calendar": f"{base_url}/alpine-skiing/calendar-results.html",
+    "event_details": f"{base_url}/general/event-details.html",  # needs sectorcode, eventid, seasoncode
+    "race_results": f"{base_url}/general/results.html",  # sectorcode, raceid
 }
 cache_dir = Path("~/.cache/fis_check").expanduser()
 
 # funcs
 
 
-def joinqs(base_url: str, query_opts={}):
+def joinqs(base_url: str, query_opts: Dict[str, str] = {}):
     query_str = urlencode(query_opts, True)
     if query_str:
         return "?".join([base_url, query_str])
@@ -90,7 +88,7 @@ def calendar_options(use_cache=True):
     if use_cache and not cache_expired(cache):
         return json.loads(cache_load(cache))
 
-    resp = requests.get(url_targets["calendar"]["url"])
+    resp = requests.get(url_targets["calendar"])
     if not resp.ok:
         logging.error(f"{resp.status_code}: {resp.text}")
         exit(1)
@@ -171,14 +169,14 @@ def visible_div(tag) -> bool:
         and (
             not tag.has_attr("class") or not re.compile(r"\bhidden-[^-\s]+?-up\b").search(str(tag))
         )
-        and tag.string
+        and bool(list(tag.stripped_strings))
     )
 
 
 def scan_calendar(**kwargs):
-    default_kwargs = dict(sector_code="AL", seasoncode="2021", categorycode="WC")
+    default_kwargs = {"sector_code": "AL", "seasoncode": "2021", "categorycode": "WC"}
     default_kwargs.update(kwargs)
-    url = joinqs(url_targets["calendar"]["url"], default_kwargs)
+    url = joinqs(url_targets["calendar"], default_kwargs)
 
     cal_page = BeautifulSoup(calendar_text(url), "lxml")
     cal = cal_page.find("div", attrs={"id": "calendarloadcontainer", "class": "section__body"})
@@ -191,6 +189,8 @@ def scan_calendar(**kwargs):
     cal_body = cal.find("div", attrs={"id": "calendardata", "class": "tbody"})
     events = list()
     for cal_row in cal_body.children:
+        if cal_row.name != "div":
+            continue
         row_data = cal_row.find("div", attrs={"class": "g-row"})
         event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
         event_data = {"id": cal_row["id"]}
@@ -211,19 +211,103 @@ def scan_calendar(**kwargs):
     return events
 
 
+def get_event(event_id: str):
+    event_qs = {"sectorcode": "AL", "seasoncode": "2021", "eventid": event_id}
+    event_resp = requests.get(url_targets["event_details"], params=event_qs)
+    if not event_resp.ok:
+        logging.error(f"{event_resp.status_code}: {event_resp.text}")
+        exit(1)
+    event_page = BeautifulSoup(event_resp.text, "lxml")
+
+    race_table = event_page.find("div", attrs={"class": "table_pb"})
+    header_obj, subheader_obj = [
+        d.div.div for d in race_table.find_all("div", attrs={"class": "thead"})
+    ]
+    header = [d.string for d in header_obj.children if visible_div(d)]
+    header.insert(
+        1, "Date"
+    )  # gets caught in vis filter and I don't feel like finding out why right now
+    runs_header = [
+        d.string.strip()
+        for d in subheader_obj.find("div", attrs={"class": "g-row"}).children
+        if d.name == "div"
+    ]
+
+    event_races = []
+    body_obj = race_table.find("div", attrs={"class": "table__body"})
+    for day_obj in [d.div.div.div for d in body_obj.children if d.name == "div"]:
+        day_raw = dict(zip(header, [a for a in day_obj.children if visible_a(a)]))
+
+        day: Dict[str, Any] = {}
+        day["race_id"] = dict(parse_qsl(urlparse(day_obj.a["href"]).query))["raceid"]
+        day["status"] = [s["title"] for s in day_raw["Status"].find_all("span")]
+        day["date"] = (
+            datetime.datetime.strptime(day_raw["Date"].div.div.div.string, "%d %b")
+            .replace(year=int(event_qs["seasoncode"]))
+            .date()
+        )
+        if day["date"].month > 7:
+            day["date"] = day["date"].replace(year=day["date"].year - 1)
+        day["codex"] = day_raw["Codex"].string
+        day["event"] = list(day_raw["Event"].stripped_strings)[0]
+        day["category"] = day_raw["Category"].string
+        day["gender"] = list(day_raw["Gender"].stripped_strings)[0]
+        run_info = day_raw["Runs"].find("div", attrs={"class": "g-row"})
+        if run_info:
+            day["runs"] = dict(
+                zip(
+                    runs_header,
+                    [
+                        d.string.strip() if d.string else ""
+                        for d in run_info.children
+                        if d.name == "div"
+                    ],
+                )
+            )
+        else:
+            day["runs"] = {}
+        day["comments"] = day_raw["Comments"].string if day_raw.get("Comments") else ""
+
+        event_races.append(day)
+
+    return event_races
+
+
+def get_results(race_id: str):
+    qs = {"raceid": race_id, "sectorcode": "AL"}
+    resp = requests.get(url_targets["race_results"], params=qs)
+    if not resp.ok:
+        breakpoint()
+        logging.error(f"{resp.status_code}: {resp.text}")
+        exit(1)
+
+    result_table = BeautifulSoup(resp.text).find("div", attrs={"class": "events-info-results"}).div
+    result_rows = [a for a in result_table.children if a.name == "a"]
+    header = [
+        "rank",
+        "bib",
+        "FIS code",
+        "name",
+        "birth year",
+        "nation",
+        "time",
+        "difference",
+        "FIS points",
+        "cup points",
+    ]
+    for row in result_rows:
+        row_cols = row.div.div
+        row = dict(zip(header, [d.stripped_strings for d in row_cols.children if d.name == "div"]))
+        breakpoint()
+        pass
+
+
 def main():
-    # 0. pull calendar with sectorcode=AL, categorycode=WC, seasoncode=2021
-    # 1. parse calendar events
-    #     1.1 don't parse events not within target dates
-    # 2. Filter for events:
-    #     with results
-    #     within 2 weeks
-    #     discplinecode in (SG, DH)
-    #     2.1 put filter in calendar scan?
-    # 3. For each event, give minimal spoiler results:
-    #     binning bib by 10
-    #     Report highest bin in top 5
-    cal_events = scan_calendar()
+    # cal_events = scan_calendar()
+    deets = get_event("48188")
+    dh_res = get_results("107381")
+    breakpoint()
+    sg_res = get_results("107382")
     breakpoint()
     pass
 
