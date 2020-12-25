@@ -1,37 +1,25 @@
 #!/usr/bin/env python3
 
 import datetime
+from enums import Gender
 import json
 import logging
 import pickle
 import re
-from base64 import b64decode, b64encode
+from base64 import b64encode
 from collections import defaultdict
-from functools import wraps
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
 
-import bs4.element
 import requests
+from .objects import RaceEvent, Race, RaceResult, 
 from bs4 import BeautifulSoup
-from requests.models import stream_decode_response_unicode
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-
-
-class Event:
-    pass
-
-
-class Day:
-    pass
-
-
-class RaceResult:
-    pass
 
 
 # globals / defaults
@@ -204,7 +192,7 @@ def scan_calendar(**kwargs):
         event_data["category"], event_data["event"] = [
             d.div.string for d in event_raw["Category & Event"].div.contents if d.name == "div"
         ]
-        event_data["gender"] = event_raw["Gender"].div.div.div.string
+        event_data["gender"] = Gender(event_raw["Gender"].div.div.div.string)
 
         events.append(event_data)
 
@@ -238,7 +226,7 @@ def get_event(event_id: str):
     event_races = []
     body_obj = race_table.find("div", attrs={"class": "table__body"})
     for day_obj in [d.div.div.div for d in body_obj.children if d.name == "div"]:
-        day_raw = dict(zip(header, [a for a in day_obj.children if visible_a(a)]))
+        day_raw = dict(zip(header, [a for a in day_obj.children if visible_a(a) or visible_div(a)]))
 
         day: Dict[str, Any] = {}
         day["race_id"] = dict(parse_qsl(urlparse(day_obj.a["href"]).query))["raceid"]
@@ -250,7 +238,14 @@ def get_event(event_id: str):
         )
         if day["date"].month > 7:
             day["date"] = day["date"].replace(year=day["date"].year - 1)
-        day["codex"] = day_raw["Codex"].string
+
+        # if <a>, no live result link, just a bare codex string
+        if day_raw["Codex"].name == "a":
+            day["codex"] = day_raw["Codex"].string
+        else:
+            # if <div>, save link result URL and extract codex from deeper divs
+            day["live_url"] = day_raw["Codex"].a["href"]
+            day["codex"] = day_raw["Codex"].a.div.div.div.string
         day["event"] = list(day_raw["Event"].stripped_strings)[0]
         day["category"] = day_raw["Category"].string
         day["gender"] = list(day_raw["Gender"].stripped_strings)[0]
@@ -275,12 +270,12 @@ def get_event(event_id: str):
     return event_location, event_races
 
 
-def get_results(race_id: str, top=5):
+def get_results(race_id: str, top=5) -> List[RaceResult]:
     qs = {"raceid": race_id, "sectorcode": "AL"}
     resp = requests.get(url_targets["race_results"], params=qs)
     if not resp.ok:
-        breakpoint()
         logging.error(f"{resp.status_code}: {resp.text}")
+        breakpoint()
         exit(1)
 
     result_table = BeautifulSoup(resp.text, "lxml").find("div", id="events-info-results").div
@@ -297,37 +292,37 @@ def get_results(race_id: str, top=5):
         "FIS points",
         "cup points",
     ]
-    podium = []
+    top_results = []
     for row in result_rows:
         row_cols = row.div.div
         row = dict(zip(header, [d.stripped_strings for d in row_cols.children if d.name == "div"]))
-        row_clean: Dict[str, Any] = dict()
+        rr_attrs: Dict[str, Any] = dict()
         for k, v in row.items():
             vlist = list(v)
             if k in ["rank", "bib", "cup points"]:
-                row_clean[k] = int(vlist[0]) if len(vlist) else 0
+                rr_attrs[k] = int(vlist[0]) if len(vlist) else 0
             elif k == "difference":
-                row_clean[k] = "" if row_clean["rank"] == 1 else vlist[0]
+                rr_attrs[k] = "" if rr_attrs["rank"] == 1 else vlist[0]
             elif k == "FIS points":
-                row_clean[k] = float(vlist[0]) if len(vlist) else float(0)
+                rr_attrs[k] = float(vlist[0]) if len(vlist) else float(0)
             else:
-                row_clean[k] = vlist[0] if len(vlist) else ""
-        podium.append(row_clean)
-        if int(row_clean["rank"]) >= top:
+                rr_attrs[k] = vlist[0] if len(vlist) else ""
+        rr = RaceResult(**rr_attrs)
+        top_results.append(rr)
+        if rr.rank >= top:
             break
 
-    return podium
+    return top_results
 
 
 def summarize(event_id: str, show_top=False):
     location, races = get_event(event_id)
-    breakpoint()
 
     for race in races:
         if race["category"] == "TRA" or "Cancelled" in race["status"]:
             continue
 
-        print(f"{location} - {race['date']} - {race['event']}")
+        print(f"{location} - {race['date'].strftime('%Y-%m-%d (%A)')} - {race['event']}")
         results = get_results(race["race_id"])
         max_bin = 0
         for r in results:
@@ -340,10 +335,9 @@ def summarize(event_id: str, show_top=False):
 
 
 def main():
-    # cal_events = scan_calendar()
-    # races = get_event("48188")
-    # dh_res = get_results("107381")
-    summarize("48188", True)
+    cal_events = scan_calendar()
+    for event in cal_events:
+        summarize("48188", True)
 
     # sg_res = get_results("107382")
     # summarize(sg_res, True)
