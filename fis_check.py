@@ -218,6 +218,7 @@ def get_event(event_id: str):
         logging.error(f"{event_resp.status_code}: {event_resp.text}")
         exit(1)
     event_page = BeautifulSoup(event_resp.text, "lxml")
+    event_location = event_page.find("div", attrs={"class": "event-header__title"}).h1.string
 
     race_table = event_page.find("div", attrs={"class": "table_pb"})
     header_obj, subheader_obj = [
@@ -233,6 +234,7 @@ def get_event(event_id: str):
         if d.name == "div"
     ]
 
+    # TODO: not parsing right
     event_races = []
     body_obj = race_table.find("div", attrs={"class": "table__body"})
     for day_obj in [d.div.div.div for d in body_obj.children if d.name == "div"]:
@@ -270,10 +272,10 @@ def get_event(event_id: str):
 
         event_races.append(day)
 
-    return event_races
+    return event_location, event_races
 
 
-def get_results(race_id: str):
+def get_results(race_id: str, top=5):
     qs = {"raceid": race_id, "sectorcode": "AL"}
     resp = requests.get(url_targets["race_results"], params=qs)
     if not resp.ok:
@@ -281,7 +283,7 @@ def get_results(race_id: str):
         logging.error(f"{resp.status_code}: {resp.text}")
         exit(1)
 
-    result_table = BeautifulSoup(resp.text).find("div", attrs={"class": "events-info-results"}).div
+    result_table = BeautifulSoup(resp.text, "lxml").find("div", id="events-info-results").div
     result_rows = [a for a in result_table.children if a.name == "a"]
     header = [
         "rank",
@@ -295,21 +297,56 @@ def get_results(race_id: str):
         "FIS points",
         "cup points",
     ]
+    podium = []
     for row in result_rows:
         row_cols = row.div.div
         row = dict(zip(header, [d.stripped_strings for d in row_cols.children if d.name == "div"]))
-        breakpoint()
-        pass
+        row_clean: Dict[str, Any] = dict()
+        for k, v in row.items():
+            vlist = list(v)
+            if k in ["rank", "bib", "cup points"]:
+                row_clean[k] = int(vlist[0]) if len(vlist) else 0
+            elif k == "difference":
+                row_clean[k] = "" if row_clean["rank"] == 1 else vlist[0]
+            elif k == "FIS points":
+                row_clean[k] = float(vlist[0]) if len(vlist) else float(0)
+            else:
+                row_clean[k] = vlist[0] if len(vlist) else ""
+        podium.append(row_clean)
+        if int(row_clean["rank"]) >= top:
+            break
+
+    return podium
+
+
+def summarize(event_id: str, show_top=False):
+    location, races = get_event(event_id)
+    breakpoint()
+
+    for race in races:
+        if race["category"] == "TRA" or "Cancelled" in race["status"]:
+            continue
+
+        print(f"{location} - {race['date']} - {race['event']}")
+        results = get_results(race["race_id"])
+        max_bin = 0
+        for r in results:
+            if show_top:
+                print("{rank}\t{bib: 2}\t{name: <30}\t{time: <10}\t{difference: <10}".format(**r))
+            rbin = r["bib"] // 10 + (1 if r["bib"] % 10 else 0)
+            if rbin > max_bin:
+                max_bin = rbin
+        print(f"Max bin: {max_bin}\n")
 
 
 def main():
     # cal_events = scan_calendar()
-    deets = get_event("48188")
-    dh_res = get_results("107381")
-    breakpoint()
-    sg_res = get_results("107382")
-    breakpoint()
-    pass
+    # races = get_event("48188")
+    # dh_res = get_results("107381")
+    summarize("48188", True)
+
+    # sg_res = get_results("107382")
+    # summarize(sg_res, True)
 
 
 if __name__ == "__main__":
