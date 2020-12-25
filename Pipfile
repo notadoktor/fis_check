@@ -6,11 +6,14 @@ name = "pypi"
 [packages]
 bs4 = "*"
 requests = "*"
-iso3166 = "*"
 
 [dev-packages]
 pdbpp = "*"
 ipython = "*"
+black = "*"
 
 [requires]
 python_version = "3.9"
+
+[pipenv]
+allow_prereleases = true
