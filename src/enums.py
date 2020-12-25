@@ -1,7 +1,7 @@
 from enum import Enum, auto, Flag
 
 
-class Category(Enum, str):
+class Category(str, Enum):
     ANC = "Australian New Zealand Cup"
     AWG = "Asian Winter Games"
     CAR = "Carving"
@@ -14,7 +14,7 @@ class Category(Enum, str):
     DAR = "Disabled Athletes Events"
     EC = "European Cup"
     ECOM = "European Cup Speed Event"
-    ENL = "Entry League FIS "
+    ENL = "Entry League FIS"
     EQUA = "European Cup Qualification"
     EXI = "Exibition"
     EYOF = "European Youth Olympic Festival"
@@ -40,7 +40,7 @@ class Category(Enum, str):
     YOG = "Youth Olympic Winter Games"
 
 
-class Country(Enum, str):
+class Country(str, Enum):
     AFG = "Afghanistan"
     ALB = "Albania"
     DZA = "Algeria"
@@ -134,7 +134,7 @@ class Country(Enum, str):
     VNM = "Vietnam"
 
 
-class Discipline(Enum, str):
+class Discipline(str, Enum):
     AL = "Alpine Skiing"
     CC = "Cross-Country"
     FS = "Freestyle"
@@ -147,7 +147,7 @@ class Discipline(Enum, str):
     TM = "Telemark"
 
 
-class Event(Enum, str):
+class Event(str, Enum):
     SL = "Slalom"
     GS = "Giant Slalom"
     SG = "Super G"
@@ -167,5 +167,5 @@ class Gender(Enum):
 class Status(Flag):
     ResultsAvailable = auto()
     PDFAvailable = auto()
-    CheckChanges = auto
+    CheckChanges = auto()
     Cancelled = auto()

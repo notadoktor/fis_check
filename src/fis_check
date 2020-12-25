@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import datetime
-from enums import Gender
 import json
 import logging
 import pickle
@@ -14,8 +13,10 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 import requests
-from .objects import RaceEvent, Race, RaceResult, 
 from bs4 import BeautifulSoup
+
+from .enums import Gender
+from .objects import Race, RaceEvent, RaceResult
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -182,6 +183,7 @@ def scan_calendar(**kwargs):
         row_data = cal_row.find("div", attrs={"class": "g-row"})
         event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
         event_data = {"id": cal_row["id"]}
+        breakpoint()
         event_data["status"] = [s["title"] for s in event_raw["Status"].find_all("span")]
         event_data["dates"] = cal_date(event_raw["Date"].string)
         event_data["place"] = event_raw["Place"].div.string
@@ -193,6 +195,8 @@ def scan_calendar(**kwargs):
             d.div.string for d in event_raw["Category & Event"].div.contents if d.name == "div"
         ]
         event_data["gender"] = Gender(event_raw["Gender"].div.div.div.string)
+
+        event_obj = RaceEvent(**event_data)
 
         events.append(event_data)
 
@@ -327,10 +331,9 @@ def summarize(event_id: str, show_top=False):
         max_bin = 0
         for r in results:
             if show_top:
-                print("{rank}\t{bib: 2}\t{name: <30}\t{time: <10}\t{difference: <10}".format(**r))
-            rbin = r["bib"] // 10 + (1 if r["bib"] % 10 else 0)
-            if rbin > max_bin:
-                max_bin = rbin
+                print(str(r))
+            if r.bin > max_bin:
+                max_bin = r.bin
         print(f"Max bin: {max_bin}\n")
 
 

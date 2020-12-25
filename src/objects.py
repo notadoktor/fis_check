@@ -12,7 +12,7 @@ class BaseObject:
             if hasattr(self, key):
                 setattr(self, key, kwargs[key])
             else:
-                raise KeyError(f"Invalid attribiute: {key}")
+                raise KeyError(f"Invalid attribute: {key}")
 
 
 class RaceEvent(BaseObject):
@@ -23,6 +23,7 @@ class RaceEvent(BaseObject):
     discipline: Discipline
     categories: List[Category]
     gender: Gender
+    _races: List["Race"] = []
 
     def load(self) -> "RaceEvent":
         raise NotImplemented
@@ -96,3 +97,10 @@ class RaceResult:
             self.racer.load()
         else:
             raise ValueError(f"You must give either a racer name or id")
+
+    def __str__(self) -> str:
+        return f"{self.rank}\t{self.bib: 2}\t{self.name: <30}\t{self.time: <10}\t{self.difference: <10}"
+
+    @property
+    def bin(self) -> int:
+        return self.bib // 10 + (1 if self.bib % 10 else 0)
