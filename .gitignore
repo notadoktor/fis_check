@@ -4,3 +4,5 @@ calendar_*
 venv/
 .venv/
 .env
+*.py[cob]
+__pycache__

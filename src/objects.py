@@ -1,10 +1,11 @@
 import datetime
 from typing import List, Optional
-from .enums import Category, Country, Discipline, Event, Gender, Status
+from enums import Category, Country, Discipline, Event, Gender, Status
 
 
 class BaseObject:
     id: str
+    seasoncode: str = "2021"
 
     def __init__(self, id: str, **kwargs) -> None:
         self.id = id
@@ -15,18 +16,29 @@ class BaseObject:
                 raise KeyError(f"Invalid attribute: {key}")
 
 
-class RaceEvent(BaseObject):
+class CalendarEvent(BaseObject):
+    _url = "https://www.fis-ski.com/DB/general/event-details.html"
+
     status: List[str] = []
     dates: List[datetime.date]
     place: str
     country: Country
     discipline: Discipline
     categories: List[Category]
+    events: List[Event]
     gender: Gender
-    _races: List["Race"] = []
+    _races: List["Race"]
 
-    def load(self) -> "RaceEvent":
-        raise NotImplemented
+    @property
+    def races(self) -> List["Race"]:
+        if self._races:
+            return self._races
+        return []
+
+    def load_races(self, force: bool = False) -> "CalendarEvent":
+        if self.races and not force:
+            return self
+        return self
 
 
 class Race(BaseObject):

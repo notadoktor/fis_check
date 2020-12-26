@@ -6,11 +6,14 @@ name = "pypi"
 [packages]
 bs4 = "*"
 requests = "*"
+lxml = "*"
 
 [dev-packages]
 pdbpp = "*"
 ipython = "*"
 black = "*"
+flake8 = "*"
+mypy = "*"
 
 [requires]
 python_version = "3.9"

@@ -1,4 +1,4 @@
-from enum import Enum, auto, Flag
+from enum import Enum, auto, IntFlag, Flag
 
 
 class Category(str, Enum):
@@ -38,6 +38,9 @@ class Category(str, Enum):
     WQUA = "World Cup Qualification"
     WSC = "FIS World Ski Championships"
     YOG = "Youth Olympic Winter Games"
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Country(str, Enum):
@@ -123,7 +126,7 @@ class Country(str, Enum):
     ZAF = "South Africa"
     ESP = "Spain"
     SWE = "Sweden"
-    CHE = "Switzerland"
+    SUI = "Switzerland"
     SYR = "Syria"
     TWN = "Taiwan"
     TJK = "Tajikistan"
@@ -132,6 +135,9 @@ class Country(str, Enum):
     USA = "United States of America"
     UZB = "Uzbekistan"
     VNM = "Vietnam"
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class Discipline(str, Enum):
@@ -146,6 +152,9 @@ class Discipline(str, Enum):
     SS = "Speed Skiing"
     TM = "Telemark"
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class Event(str, Enum):
     SL = "Slalom"
@@ -159,12 +168,16 @@ class Event(str, Enum):
     TP = "Team Parallel"
 
 
-class Gender(Enum):
-    F = auto()
+class Gender(Flag):
     M = auto()
+    W = auto()
+    All = M | W
+
+    def __str__(self) -> str:
+        return "" if self.name == "All" else self.name
 
 
-class Status(Flag):
+class Status(IntFlag):
     ResultsAvailable = auto()
     PDFAvailable = auto()
     CheckChanges = auto()
