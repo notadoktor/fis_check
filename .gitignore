@@ -6,3 +6,4 @@ venv/
 .env
 *.py[cob]
 __pycache__
+.mypy_cache

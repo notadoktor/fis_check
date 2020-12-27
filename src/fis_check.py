@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 
 import datetime
-import json
 import logging
-import pickle
 import re
-from base64 import b64encode
 from collections import defaultdict
 from enum import Flag
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from requests.api import get
 
 from enums import Category, Country, Discipline, Event, Gender, Status
-from util import BaseObject, Cache, RaceFilter, merge_status
+from util import Cache, RaceFilter, merge_status
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -28,22 +23,24 @@ logging.basicConfig(
 
 
 class Calendar:
-    url = "https://www.fis-ski.com/DB/alpine-skiing/calendar-results.html"
-    cache: Cache = Cache("calendar")
-    form_cache: Cache = Cache("calendar_form", ctype="json", expire_in=datetime.timedelta(days=90))
-    event_cache: Cache = Cache("calendar_events")
-    seasoncode: str = "2021"
-    disciplinecode: Discipline = Discipline.AL
-    categorycode: Category = Category.WC
-    _events: List["CalendarEvent"] = []
-    _options: Dict[str, Any] = {}
+    url: str = "https://www.fis-ski.com/DB/alpine-skiing/calendar-results.html"
 
-    def __init__(self, **kwargs) -> None:
-        for k in kwargs:
-            if hasattr(self, k):
-                setattr(self, k, kwargs[k])
-            else:
-                raise KeyError(f"Invalid parameter: {k}")
+    def __init__(
+        self,
+        seasoncode: str = "2021",
+        disciplinecode: Discipline = Discipline.AL,
+        categorycode: Category = Category.WC,
+    ) -> None:
+        self.seasoncode = seasoncode
+        self.disciplinecode = disciplinecode
+        self.categorycode = categorycode
+        self.cache = Cache("calendar")
+        self.form_cache = Cache(
+            "calendar_form", ctype="json", expire_in=datetime.timedelta(days=90)
+        )
+        self.event_cache = Cache("calendar_events")
+        self._events: List["CalendarEvent"] = []
+        self._options: Dict[str, Any] = {}
 
     @property
     def options(self):
@@ -76,7 +73,7 @@ class Calendar:
                     for sub_val in opt_val:
                         if str(sub_val) not in q_reqs["opts"].values():
                             raise ValueError(f"Invalid {q} option: {sub_val}")
-                    cal_qs[q] = ",".join([str(sv) for sv in sub_val])
+                    cal_qs[q] = ",".join([str(sv) for sv in opt_val])
                 else:
                     raise KeyError(f"Got unexpected query option type: {q_reqs['type']}")
             elif "default" in self.options[q] and q not in cal_qs:
@@ -169,7 +166,7 @@ class Calendar:
             event_data["dates"] = self.parse_date(event_raw["Date"].string)
             if event_data["dates"][0] > datetime.date.today():
                 break
-            event_data["place"] = event_raw["Place"].div.string
+            event_data["place"] = str(event_raw["Place"].div.string)
             event_data["country"] = Country[
                 event_raw["Country"].find("span", attrs={"class": "country__name-short"}).string
             ]
@@ -190,7 +187,6 @@ class Calendar:
             event_data["gender"] = Gender[event_raw["Gender"].div.div.div.string]
             events.append(CalendarEvent(**event_data))
         self._events = events
-        breakpoint()
         self.event_cache.write(self._events)
         return self._events
 
@@ -209,18 +205,33 @@ class Calendar:
             return self.cache.load()
 
 
-class CalendarEvent(BaseObject):
-    _url = "https://www.fis-ski.com/DB/general/event-details.html"
+class CalendarEvent:
+    url: str = "https://www.fis-ski.com/DB/general/event-details.html"
 
-    status = Status(0)
-    dates: List[datetime.date] = []
-    place: str = None  # type: ignore
-    country: Country = None  # type: ignore
-    discipline: Discipline = Discipline.AL
-    categories: List[Category] = []
-    events: List[Event] = []
-    gender: Gender = None  # type: ignore
-    _races: List["Race"] = []
+    def __init__(
+        self,
+        id: str,
+        dates: List[datetime.date],
+        place: str,
+        country: Country,
+        categories: List[Category],
+        events: List[Event],
+        gender: Gender,
+        seasoncode: str = "2021",
+        discipline: Discipline = Discipline.AL,
+        status=Status(0),
+    ) -> None:
+        self.id = id
+        self.dates = dates
+        self.place = place
+        self.country = country
+        self.categories = categories
+        self.events = events
+        self.gender = gender
+        self.seasoncode = seasoncode
+        self.discipline = discipline
+        self.status = status
+        self._races: List["Race"] = []
 
     def __repr__(self) -> str:
         return f"<CalendarEvent id={self.id} place=\"{self.place}\" gender={self.gender.name} events={','.join([e.name for e in self.events])} start={self.dates[0]}>"
@@ -228,12 +239,14 @@ class CalendarEvent(BaseObject):
     def races(self, skip_cache=False, f: RaceFilter = None) -> List["Race"]:
         if not self._races or skip_cache:
             self.load_races(skip_cache)
+
         if f:
             return [r for r in self._races if r.filtered(f)]
         return self._races
 
     def load_races(self, skip_cache: bool = False) -> List["Race"]:
         if self._races and not skip_cache:
+            logging.info(f"using cached race data for {self}")
             return self._races
 
         event_qs = {
@@ -241,11 +254,12 @@ class CalendarEvent(BaseObject):
             "seasoncode": self.seasoncode,
             "eventid": self.id,
         }
-        event_resp = requests.get(self._url, params=event_qs)
+        event_resp = requests.get(self.url, params=event_qs)
         if not event_resp.ok:
             logging.error(f"{event_resp.status_code}: {event_resp.text}")
             breakpoint()
             exit(1)
+        # breakpoint()
 
         event_page = BeautifulSoup(event_resp.text, "lxml")
         race_table = event_page.find("div", attrs={"class": "table_pb"})
@@ -282,11 +296,11 @@ class CalendarEvent(BaseObject):
 
             # if <a>, no live result link, just a bare codex string
             if race_raw["Codex"].name == "a":
-                race_args["codex"] = race_raw["Codex"].string
+                race_args["codex"] = str(race_raw["Codex"].string)
             else:
                 # if <div>, save link result URL and extract codex from deeper divs
                 race_args["live_url"] = race_raw["Codex"].a["href"]
-                race_args["codex"] = race_raw["Codex"].a.div.div.div.string
+                race_args["codex"] = str(race_raw["Codex"].a.div.div.div.string)
             race_args["event"] = Event(list(race_raw["Event"].stripped_strings)[0])
             race_args["category"] = Category[race_raw["Category"].string]
             race_args["gender"] = Gender[list(race_raw["Gender"].stripped_strings)[0]]
@@ -306,23 +320,39 @@ class CalendarEvent(BaseObject):
                 race_args["runs"] = {}
             race_args["comments"] = race_raw["Comments"].string if race_raw.get("Comments") else ""
 
+            # breakpoint()
             self._races.append(Race(**race_args))
 
         return self._races
 
 
-class Race(BaseObject):
+class Race:
     url: str = "https://www.fis-ski.com/DB/general/results.html"
-    category: Category = None  # type: ignore
-    codex: str = None  # type: ignore
-    comments: Optional[str] = None
-    date: datetime.date = None  # type: ignore
-    event: Event = None  # type: ignore
-    gender: Gender = None  # type: ignore
-    live_url: Optional[str] = None
-    runs: Optional[Dict[str, Any]] = {}
-    status: Status = None  # type: ignore
-    _results: List["RaceResult"] = []
+
+    def __init__(
+        self,
+        id: str,
+        category: Category,
+        codex: str,
+        date: datetime.date,
+        event: Event,
+        gender: Gender,
+        status: Status,
+        comments: str = None,
+        live_url: str = None,
+        runs: Dict[str, Any] = None,
+    ) -> None:
+        self.id = id
+        self.category = category
+        self.codex = codex
+        self.date = date
+        self.event = event
+        self.gender = gender
+        self.status = status
+        self.comments = comments
+        self.live_url = live_url
+        self.runs = runs
+        self._results: List["RaceResult"] = []
 
     def __repr__(self) -> str:
         return f"<Race id={self.id} date={self.date} event={self.event} gender={self.gender}>"
@@ -359,7 +389,7 @@ class Race(BaseObject):
     def load_results(self, skip_cache: bool = False):
         if not self._results or skip_cache:
             qs = {"raceid": self.id, "sectorcode": "AL"}
-            resp = requests.get(self.url, params=qs)
+            resp = requests.get(Race.url, params=qs)
             if not resp.ok:
                 logging.error(f"{resp.status_code}: {resp.text}")
                 breakpoint()
@@ -414,7 +444,7 @@ class Race(BaseObject):
         print(f"Max bin: {max_bin}")
 
 
-class Racer(BaseObject):
+class Racer:
     birth_year: int = None  # type: ignore
     fis_code: str = None  # type: ignore
     gender: Gender = None  # type: ignore
@@ -422,7 +452,7 @@ class Racer(BaseObject):
     nation: Country = None  # type: ignore
 
     def __init__(self, id: str, load=False, **kwargs) -> None:
-        super().__init__(id, **kwargs)
+        self.id = id
         if load:
             self.load()
 
@@ -435,51 +465,34 @@ class Racer(BaseObject):
 
 
 class RaceResult:
-    bib: int = None  # type: ignore
-    birth_year: int = None  # type: ignore
-    cup_points: Optional[int] = None
-    difference: str = None  # type: ignore
-    fis_code: str = None  # type: ignore
-    fis_points: Optional[float] = None
-    name: str = None  # type: ignore
-    nation: Country = None  # type: ignore
-    racer: Optional[Racer] = None
-    rank: int = None  # type: ignore
-    time: str = None  # type: ignore
-
     def __init__(
         self,
         rank: int,
         bib: int,
         time: str,
         difference: str,
-        name: str = None,
+        name: str,
+        nation: Country,
         fis_points: float = None,
         cup_points: int = None,
         racer_id: str = None,
-        **kwargs,
+        birth_year: int = None,
+        fis_code: str = None,
+        racer: Racer = None,
     ) -> None:
         self.rank = rank
         self.bib = bib
         self.time = time
         self.difference = difference
+        self.name = name
+        self.nation = nation
         if fis_points is not None:
             self.fis_points = fis_points
         if cup_points is not None:
             self.cup_points = cup_points
-        if name:
-            self.name = name
-        elif racer_id:
+        if racer_id:
             self.racer = Racer(racer_id)
             self.racer.load()
-        else:
-            raise ValueError(f"You must give either a racer name or id")
-
-        for k in kwargs:
-            if hasattr(self, k):
-                setattr(self, k, kwargs[k])
-            else:
-                raise KeyError(f"Invalid parameter: {k}")
 
     def __str__(self) -> str:
         return f"{self.rank}\t{self.bib: 2}\t{self.name: <30}\t{self.nation}\t{self.time: <10}\t{self.difference: <10}"
@@ -520,16 +533,20 @@ def main():
     # speed_events = [ce for ce in cal_events if Event.DH in ce.events or Event.SG in ce.events]
     # for ev in speed_events:
     for ev in cal_events:
+        # if ev.id != "46945":
+        print(f"{ev} num_races={len(ev._races)}")
         if ev.dates[0] < min_date:
             continue
         elif ev.dates[0] > datetime.date.today():
             break
-        rf = RaceFilter(status=Status.ResultsAvailable)
         print(f"{ev.place} - {','.join(ev.categories)} - {','.join(ev.events)} - eventid={ev.id}")
+        rf = RaceFilter(status=Status.ResultsAvailable)
         ev_races = ev.races(f=rf)
+        print(f"Found {len(ev_races)} races for {ev}")
         if ev_races:
             for er in ev_races:
-                print(f"{er.date} - {er.event} ({er.gender}) - raceid={er.id}")
+                print(f"{er.date} - {er.event} ({er.gender}) - eventid={ev.id} raceid={er.id}")
+                # breakpoint()
                 er.summarize(3, show_top=True)
         print()
 

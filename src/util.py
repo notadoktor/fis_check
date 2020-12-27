@@ -19,19 +19,6 @@ class RaceFilter(NamedTuple):
     status: Optional[Status] = Status.ResultsAvailable
 
 
-class BaseObject:
-    id: str
-    seasoncode: str = "2021"
-
-    def __init__(self, id: str, **kwargs) -> None:
-        self.id = id
-        for key in kwargs:
-            if hasattr(self, key):
-                setattr(self, key, kwargs[key])
-            else:
-                raise KeyError(f"Invalid attribute: {key}")
-
-
 class Cache:
     root_dir: Path = Path("~/.cache/fis_check").expanduser()
     key: str = None  # type: ignore
