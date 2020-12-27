@@ -435,7 +435,7 @@ class Race:
 
             self._results = all_results
 
-    def summarize(self, top: int = 5, show_top=False) -> None:
+    def summarize(self, top: int = 5, show_top: bool = False) -> None:
         max_bin = 0
         for r in self.results(top=top):
             if show_top:
@@ -446,13 +446,13 @@ class Race:
 
 
 class Racer:
-    birth_year: int = None  # type: ignore
-    fis_code: str = None  # type: ignore
-    gender: Gender = None  # type: ignore
-    name: str = None  # type: ignore
-    nation: Country = None  # type: ignore
+    birth_year: int
+    fis_code: str
+    gender: Gender
+    name: str
+    nation: Country
 
-    def __init__(self, id: str, load=False, **kwargs) -> None:
+    def __init__(self, id: str, load: bool = False, **kwargs) -> None:
         self.id = id
         if load:
             self.load()
@@ -597,6 +597,7 @@ def pos_int(ctx, param, val: int):
     help="show events for days leading up to --max-date",
     show_default=True,
 )
+@click.option("--skip-cache", is_flag=True, help="Fetch new data from the fis website")
 @click.pass_context
 def main(
     ctx: click.Context,
@@ -610,6 +611,7 @@ def main(
     min_date: Optional[datetime.date],
     max_date: datetime.date,
     num_days: int,
+    skip_cache: bool,
 ):
     # breakpoint()
     date_range = datetime.timedelta(days=num_days)
@@ -623,7 +625,7 @@ def main(
     event_filter = set(events)
 
     cal = Calendar()
-    cal_events = cal.scan()
+    cal_events = cal.scan(skip_cache=skip_cache)
     for ev in cal_events:
         if ev.dates[0] < min_date:
             continue
@@ -633,8 +635,9 @@ def main(
             continue
         elif event_filter and not any([e in event_filter for e in ev.events]):
             continue
+
         rf = RaceFilter(status=Status.ResultsAvailable)
-        ev_races = ev.races(f=rf)
+        ev_races = ev.races(skip_cache=skip_cache, f=rf)
         if ev_races:
             print(ev.place)
             for er in ev_races:

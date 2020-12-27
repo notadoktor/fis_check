@@ -3,9 +3,9 @@ import json
 import pickle
 from base64 import b64encode
 from pathlib import Path
-from typing import Callable, Dict, NamedTuple, Optional, Union, Literal, List, Any
+from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
-from enums import Category, Status, Event, Gender
+from enums import Category, Event, Gender, Status
 
 
 class RaceFilter(NamedTuple):
