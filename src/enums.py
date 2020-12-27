@@ -168,7 +168,7 @@ class Event(str, Enum):
     TP = "Team Parallel"
 
 
-class Gender(Flag):
+class Gender(IntFlag):
     M = auto()
     W = auto()
     All = M | W

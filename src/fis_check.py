@@ -8,6 +8,7 @@ from enum import Flag
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
 
+import click
 import requests
 from bs4 import BeautifulSoup
 
@@ -138,7 +139,7 @@ class Calendar:
         self.event_cache.params = cal_qs.copy()
         if not skip_cache and not self.event_cache.expired:
             self._events = self.event_cache.load()
-            logging.info(f"Using cached event data")
+            logging.debug(f"Using cached event data")
             return self._events
 
         self._load_options(skip_cache)
@@ -201,7 +202,7 @@ class Calendar:
             self.cache.write(resp.text)
             return resp.text
         else:
-            logging.info(f"Loading cached calendar page")
+            logging.debug(f"Loading cached calendar page")
             return self.cache.load()
 
 
@@ -231,7 +232,7 @@ class CalendarEvent:
         self.seasoncode = seasoncode
         self.discipline = discipline
         self.status = status
-        self._races: List["Race"] = []
+        self._races: List["Race"] = list()
 
     def __repr__(self) -> str:
         return f"<CalendarEvent id={self.id} place=\"{self.place}\" gender={self.gender.name} events={','.join([e.name for e in self.events])} start={self.dates[0]}>"
@@ -246,7 +247,7 @@ class CalendarEvent:
 
     def load_races(self, skip_cache: bool = False) -> List["Race"]:
         if self._races and not skip_cache:
-            logging.info(f"using cached race data for {self}")
+            logging.debug(f"using cached race data for {self}")
             return self._races
 
         event_qs = {
@@ -526,29 +527,121 @@ def visible_div(tag) -> bool:
     )
 
 
-def main():
-    min_date = datetime.date.today() - datetime.timedelta(days=7)
+def str2event(ctx, param, val_list: str) -> List[Event]:
+    ev_list = []
+    for val in val_list:
+        if not isinstance(val, Event):
+            try:
+                val = Event(val.upper())
+            except KeyError:
+                raise click.BadParameter(f"Invalid event type: {val}", ctx, param)
+        ev_list.append(val)
+    return ev_list
+
+
+def str2gender(ctx, param, val: str) -> Gender:
+    if isinstance(val, Gender):
+        return val
+    try:
+        return Gender[val.upper()]
+    except KeyError:
+        raise click.BadParameter(f"Invalid gender: {val}", ctx, param)
+
+
+def str2date(ctx, param, val: Union[str, datetime.date]) -> Optional[datetime.date]:
+    if val is None:
+        if param.required:
+            raise click.BadParameter(f"You must specify a date", ctx, param)
+        return val
+    if val is None or isinstance(val, datetime.date):
+        return val
+    return datetime.datetime.strptime(val, "%Y-%m-%d").date()
+
+
+def pos_int(ctx, param, val: int):
+    if val < 1:
+        raise click.BadParameter(f"value must be positive", ctx, param)
+    return val
+
+
+@click.command("check recent race status")
+@click.option(
+    "--event", "-e", "events", multiple=True, callback=str2event, help="show specific event type(s)"
+)
+@click.option("--speed", is_flag=True, help="show Super G and Downhill")
+@click.option("--tech", is_flag=True, help="show Slalom and GS")
+@click.option(
+    "--gender",
+    callback=str2gender,
+    default=Gender.All,
+    help="show events for just M or F",
+)
+@click.option("--summarize/--no-summarize", default=True, help="show race summary")
+@click.option(
+    "--top", type=int, default=5, callback=pos_int, help="summarize race by the top X finishers"
+)
+@click.option("--show-top", is_flag=True, help="show the top finishers in the summary")
+@click.option("--min-date", callback=str2date, help="show events on or after this date")
+@click.option(
+    "--max-date",
+    callback=str2date,
+    default=datetime.date.today(),
+    help="show events up to this day",
+    show_default=True,
+)
+@click.option(
+    "--num-days",
+    type=int,
+    callback=pos_int,
+    default=7,
+    help="show events for days leading up to --max-date",
+    show_default=True,
+)
+@click.pass_context
+def main(
+    ctx: click.Context,
+    events: List[Event],
+    speed: bool,
+    tech: bool,
+    gender: Gender,
+    summarize: bool,
+    top: int,
+    show_top: bool,
+    min_date: Optional[datetime.date],
+    max_date: datetime.date,
+    num_days: int,
+):
+    # breakpoint()
+    date_range = datetime.timedelta(days=num_days)
+    if min_date is None:
+        min_date = max_date - date_range
+
+    if speed:
+        events.extend([Event.SG, Event.DH])
+    if tech:
+        events.extend([Event.SL, Event.GS])
+    event_filter = set(events)
+
     cal = Calendar()
     cal_events = cal.scan()
-    # speed_events = [ce for ce in cal_events if Event.DH in ce.events or Event.SG in ce.events]
-    # for ev in speed_events:
     for ev in cal_events:
-        # if ev.id != "46945":
-        print(f"{ev} num_races={len(ev._races)}")
         if ev.dates[0] < min_date:
             continue
         elif ev.dates[0] > datetime.date.today():
             break
-        print(f"{ev.place} - {','.join(ev.categories)} - {','.join(ev.events)} - eventid={ev.id}")
+        elif ev.gender not in gender:
+            continue
+        elif event_filter and not any([e in event_filter for e in ev.events]):
+            continue
         rf = RaceFilter(status=Status.ResultsAvailable)
         ev_races = ev.races(f=rf)
-        print(f"Found {len(ev_races)} races for {ev}")
         if ev_races:
+            print(ev.place)
             for er in ev_races:
-                print(f"{er.date} - {er.event} ({er.gender}) - eventid={ev.id} raceid={er.id}")
-                # breakpoint()
-                er.summarize(3, show_top=True)
-        print()
+                print(f"{er.date} - {er.event} ({er.gender})")
+                if summarize:
+                    er.summarize(top=top, show_top=show_top)
+            print()
 
 
 if __name__ == "__main__":

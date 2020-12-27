@@ -81,7 +81,9 @@ class Cache:
             fmt = pickle.dumps
         elif self.ctype == "json":
             mode = "wt"
-            fmt = json.dumps  # type: ignore
+            fmt = json.dumps
+        else:
+            raise ValueError(f"Invalid format: {self.ctype}")
 
         with self.path.open(mode) as fh:
             fh.write(fmt(val))
