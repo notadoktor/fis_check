@@ -1,0 +1,5 @@
+fis_src="$fis_root/src"
+
+# shellcheck source=/dev/null
+source "$fis_root/.venv/bin/activate"
+exec python "$fis_src/fis_check.py" "$@"
