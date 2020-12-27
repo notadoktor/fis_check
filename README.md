@@ -29,6 +29,7 @@
 
 ### maybe?
 
+- as API/simple front end as well as CLI
 - add some country info to summaries? did country X have anyone in top Y, etc.
 - process non-alpine race results
 - analysis / visualization of top X racers by split times / speeds in results
