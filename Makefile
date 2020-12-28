@@ -10,9 +10,8 @@ install_deps:
 
 install_script:
 	mkdir -p $(USER_BIN)
-	echo '#!/bin/bash -e' > $(FIS_SCRIPT)
-	echo "fis_root=$(dir $(realpath $(firstword $(MAKEFILE_LIST))))" >> $(FIS_SCRIPT)
-	cat bin/fis_check >> $(FIS_SCRIPT)
+	echo $(firstword $(MAKEFILE_LIST))
+	perl -pe "s|FIS_ROOT|$$(dirname $(realpath $(firstword $(MAKEFILE_LIST))))|" bin/fis_check > $(FIS_SCRIPT)
 	chmod +x $(FIS_SCRIPT)
 
 .PHONY: help

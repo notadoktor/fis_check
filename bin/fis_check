@@ -1,5 +1,4 @@
-fis_src="$fis_root/src"
+#!/bin/bash -e
 
-# shellcheck source=/dev/null
-source "$fis_root/.venv/bin/activate"
-exec python "$fis_src/fis_check.py" "$@"
+cd FIS_ROOT
+exec pipenv run python src/fis_check.py "$@"
