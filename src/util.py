@@ -2,12 +2,17 @@ import datetime
 import json
 import pickle
 from base64 import b64encode
+from collections import namedtuple
 from pathlib import Path
 from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
-from enums import Category, Event, Gender, Status
+import pytz
+
+from enums import Category, Event, Gender, RunStatus, Status
 
 cache_dir = Path("~/.cache/fis_check").expanduser()
+tz_cet: datetime.tzinfo = pytz.timezone("cet")
+tz_local: datetime.tzinfo = datetime.datetime.now().astimezone().tzinfo  # type: ignore
 
 
 class RaceFilter(NamedTuple):
@@ -19,6 +24,14 @@ class RaceFilter(NamedTuple):
     gender: Optional[Gender] = None
     live_url: Optional[bool] = None
     status: Optional[Status] = Status.ResultsAvailable
+
+
+class RaceRun(NamedTuple):
+    run: int
+    cet: datetime.time
+    loc: datetime.time
+    status: Optional[RunStatus]
+    info: Optional[str] = None
 
 
 class Cache:
@@ -40,8 +53,7 @@ class Cache:
         self.key = key
         self.ctype = ctype
         self.expire_in = expire_in
-        if params:
-            self.params = params
+        self.params = params
 
     @property
     def expired(self) -> bool:

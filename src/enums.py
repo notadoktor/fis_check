@@ -168,6 +168,13 @@ class Event(str, Enum):
     TP = "Team Parallel"
 
 
+class RunStatus(str, Enum):
+    Cancelled = "Cancelled"
+    Scheduled = "Scheduled"
+    Rescheduled = "Rescheduled"
+    OfficialResults = "OfficialResults"
+
+
 class Gender(IntFlag):
     M = auto()
     W = auto()

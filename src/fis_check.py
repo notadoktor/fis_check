@@ -12,8 +12,8 @@ import click
 import requests
 from bs4 import BeautifulSoup
 
-from enums import Category, Country, Discipline, Event, Gender, Status
-from util import Cache, RaceFilter, merge_status
+from enums import Category, Country, Discipline, Event, Gender, RunStatus, Status
+from util import Cache, RaceFilter, RaceRun, merge_status, tz_cet, tz_local
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -271,7 +271,7 @@ class CalendarEvent:
             d.string if d.string else d.div.string for d in header_obj.children if visible_div(d)
         ]
         runs_header = [
-            d.string.strip()
+            str(d.string).strip().lower()
             for d in subheader_obj.find("div", attrs={"class": "g-row"}).children
             if d.name == "div"
         ]
@@ -305,20 +305,38 @@ class CalendarEvent:
             race_args["event"] = Event(list(race_raw["Event"].stripped_strings)[0])
             race_args["category"] = Category[race_raw["Category"].string]
             race_args["gender"] = Gender[list(race_raw["Gender"].stripped_strings)[0]]
-            run_info = race_raw["Runs"].find("div", attrs={"class": "g-row"})
-            if run_info:
-                race_args["runs"] = dict(
-                    zip(
-                        runs_header,
-                        [
-                            d.string.strip() if d.string else ""
-                            for d in run_info.children
-                            if d.name == "div"
-                        ],
+            all_run_info = list(race_raw["Runs"].find_all("div", attrs={"class": "g-row"}))
+            if all_run_info:
+                race_args["runs"] = []
+                for run_info in all_run_info:
+                    run_raw: Dict[str, str] = dict(
+                        zip(
+                            runs_header,
+                            [
+                                d.string.strip() if d.string else ""
+                                for d in run_info.children
+                                if d.name == "div"
+                            ],
+                        )
                     )
-                )
+
+                    run = dict()
+                    run["run"] = int(re.sub(r"\D", "", run_raw["run"]))
+
+                    cet_hour, cet_minute = [int(t) for t in run_raw["cet"].split(":")]
+                    run["cet"] = datetime.time(cet_hour, cet_minute, tzinfo=tz_cet)
+
+                    loc_hour, loc_minute = [int(t) for t in run_raw["loc"].split(":")]
+                    run["loc"] = datetime.time(loc_hour, loc_minute, tzinfo=tz_local)
+
+                    if run_raw.get("status"):
+                        run["status"] = RunStatus(run_raw["status"].title().replace(" ", ""))
+                    else:
+                        run["status"] = None
+
+                    race_args["runs"].append(RaceRun(**run))
             else:
-                race_args["runs"] = {}
+                race_args["runs"] = []
             race_args["comments"] = race_raw["Comments"].string if race_raw.get("Comments") else ""
 
             # breakpoint()
@@ -339,9 +357,9 @@ class Race:
         event: Event,
         gender: Gender,
         status: Status,
+        runs: List[RaceRun],
         comments: str = None,
         live_url: str = None,
-        runs: Dict[str, Any] = None,
     ) -> None:
         self.id = id
         self.category = category
@@ -639,8 +657,24 @@ def main(
         if ev_races:
             print(ev.place)
             for er in ev_races:
-                print(f"{er.date} - {er.event} ({er.gender})")
-                if summarize:
+                # breakpoint()
+                er_info = [str(er.date), er.event.value]
+                if len(er.runs) and Status.Cancelled not in er.status:
+                    if not all(
+                        [not r.status or r.status == RunStatus.OfficialResults for r in er.runs]
+                    ):
+                        run_info = []
+                        for run in er.runs:
+                            if run.status:
+                                run_info.append(f"run{run.run}: {run.status}")
+                        if run_info:
+                            er_info.extend(run_info)
+                if er.comments:
+                    er_info.append(er.comments.strip())
+                print(" - ".join(er_info))
+                if summarize and all(
+                    [r.status and r.status == RunStatus.OfficialResults for r in er.runs]
+                ):
                     er.summarize(top=top, show_top=show_top)
             print()
 
