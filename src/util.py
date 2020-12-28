@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
 from enums import Category, Event, Gender, Status
 
+cache_dir = Path("~/.cache/fis_check").expanduser()
+
 
 class RaceFilter(NamedTuple):
     category: Category = Category.WC
@@ -20,20 +22,26 @@ class RaceFilter(NamedTuple):
 
 
 class Cache:
-    root_dir: Path = Path("~/.cache/fis_check").expanduser()
-    key: str = None  # type: ignore
-    expire_in: datetime.timedelta = datetime.timedelta(days=1)
-    params: Optional[Dict[str, str]] = None
-    ctype: Literal["pickle", "json"] = "pickle"
+    root_dir: Path
+    key: str
+    expire_in: datetime.timedelta
+    ctype: Literal["pickle", "json"]
+    params: Optional[Dict[str, str]]
 
-    def __init__(self, key: str, **kwargs) -> None:
+    def __init__(
+        self,
+        key: str,
+        root_dir: Path = cache_dir,
+        expire_in: datetime.timedelta = datetime.timedelta(days=1),
+        params: Dict[str, str] = None,
+        ctype: Literal["pickle", "json"] = "pickle",
+    ) -> None:
+        self.root_dir = root_dir
         self.key = key
-
-        for k in kwargs:
-            if hasattr(self, k):
-                setattr(self, k, kwargs[k])
-            else:
-                raise KeyError(f"Invalid parameter: {k}")
+        self.ctype = ctype
+        self.expire_in = expire_in
+        if params:
+            self.params = params
 
     @property
     def expired(self) -> bool:

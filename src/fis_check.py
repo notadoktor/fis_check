@@ -598,9 +598,7 @@ def pos_int(ctx, param, val: int):
     show_default=True,
 )
 @click.option("--skip-cache", is_flag=True, help="Fetch new data from the fis website")
-@click.pass_context
 def main(
-    ctx: click.Context,
     events: List[Event],
     speed: bool,
     tech: bool,
@@ -648,4 +646,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    main(obj={})
