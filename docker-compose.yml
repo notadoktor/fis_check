@@ -1,0 +1,22 @@
+services:
+  fis_check:
+    build: .
+    volumes:
+      - .:/app
+    links:
+      - postgres
+    env_file:
+      - .env
+  postgres:
+    image: postgres:12
+    restart: always
+    env_file:
+      - .env.db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pglogs:/var/log/postgresql
+volumes:
+  pgdata: {}
+  pglogs: {}

@@ -28,4 +28,4 @@ RUN pipenv install --dev
 
 COPY . /app
 
-CMD ["/bin/bash"]
+CMD ["sleep", "infinity"]
