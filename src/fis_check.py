@@ -667,6 +667,8 @@ def main(
                         for run in er.runs:
                             if run.status:
                                 run_info.append(f"run{run.run}: {run.status}")
+                                if run.cet:
+                                    run_info[-1] += f" @ {run.cet.isoformat('minutes')}"
                         if run_info:
                             er_info.extend(run_info)
                 if er.comments:
