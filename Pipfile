@@ -7,14 +7,19 @@ name = "pypi"
 bs4 = "*"
 requests = "*"
 lxml = "*"
+sqlalchemy = "*"
+fastapi = "*"
+psycopg2 = "*"
+pytz = "*"
 
 [dev-packages]
 pdbpp = "*"
 ipython = "*"
-black = "20.8b1"
+black = "*"
 flake8 = "*"
 mypy = "*"
 jedi = "==0.17.2"
+sqlalchemy-stubs = "*"
 
 [requires]
 python_version = "3.9"
