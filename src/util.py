@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
 import pytz
 
-from enums import Category, Event, Gender, RunStatus, Status
+from enums import Category, EventType, Gender, RunStatus, Status
 
 cache_dir = Path("~/.cache/fis_check").expanduser()
 tz_cet: datetime.tzinfo = pytz.timezone("cet")
@@ -16,7 +16,7 @@ tz_local: datetime.tzinfo = datetime.datetime.now().astimezone().tzinfo  # type:
 
 class RaceFilter(NamedTuple):
     category: Category = Category.WC
-    event: set[Event] = set()
+    event: set[EventType] = set()
     date: Optional[datetime.date] = None
     gender: Optional[Gender] = None
     live_url: Optional[bool] = None

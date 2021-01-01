@@ -156,7 +156,7 @@ class Discipline(str, Enum):
         return self.name
 
 
-class Event(str, Enum):
+class EventType(str, Enum):
     SL = "Slalom"
     GS = "Giant Slalom"
     SG = "Super G"
