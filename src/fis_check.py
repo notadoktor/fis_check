@@ -377,18 +377,19 @@ class Race:
         return f"<Race id={self.id} date={self.date} event={self.event} gender={self.gender}>"
 
     def filtered(self, f: RaceFilter) -> bool:
-        for k, val in f._asdict().items():
-            if val is not None:
-                r_val = getattr(self, k, None)
-                if isinstance(val, Flag):
-                    if val not in r_val:
-                        return False
-                elif isinstance(val, bool):
-                    if bool(r_val) != val:
-                        return False
-                elif type(val) == type(r_val):
-                    if val != r_val:
-                        return False
+        if f.category and self.category != f.category:
+            return False
+        if len(f.event) and self.event not in f.event:
+            return False
+        if f.date and self.date != f.date:
+            return False
+        if f.gender and self.gender not in f.gender:
+            return False
+        if f.live_url is not None:
+            if f.live_url != bool(self.live_url):
+                return False
+        if f.status and self.status not in f.status:
+            return False
         return True
 
     def results(self, top: int = 10, skip_cache: bool = False) -> List["RaceResult"]:
@@ -550,7 +551,7 @@ def str2event(ctx, param, val_list: str) -> List[Event]:
     for val in val_list:
         if not isinstance(val, Event):
             try:
-                val = Event(val.upper())
+                val = Event[val.upper()]
             except KeyError:
                 raise click.BadParameter(f"Invalid event type: {val}", ctx, param)
         ev_list.append(val)
@@ -652,7 +653,7 @@ def main(
         elif event_filter and not any([e in event_filter for e in ev.events]):
             continue
 
-        rf = RaceFilter(status=Status.ResultsAvailable)
+        rf = RaceFilter(status=Status.ResultsAvailable, event=event_filter)
         ev_races = ev.races(skip_cache=skip_cache, f=rf)
         if ev_races:
             print(ev.place)

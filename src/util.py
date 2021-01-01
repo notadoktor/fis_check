@@ -2,7 +2,6 @@ import datetime
 import json
 import pickle
 from base64 import b64encode
-from collections import namedtuple
 from pathlib import Path
 from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
@@ -17,10 +16,8 @@ tz_local: datetime.tzinfo = datetime.datetime.now().astimezone().tzinfo  # type:
 
 class RaceFilter(NamedTuple):
     category: Category = Category.WC
-    codex: Optional[str] = None
-    comments: Optional[bool] = None
+    event: set[Event] = set()
     date: Optional[datetime.date] = None
-    event: Optional[Event] = None
     gender: Optional[Gender] = None
     live_url: Optional[bool] = None
     status: Optional[Status] = Status.ResultsAvailable
