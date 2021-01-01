@@ -1,4 +1,5 @@
 import logging
+
 import cli
 
 logging.basicConfig(

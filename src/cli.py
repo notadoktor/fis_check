@@ -23,9 +23,10 @@ def str2event(ctx, param, val_list: str) -> List[EventType]:
     return ev_list
 
 
-def str2gender(ctx, param, val: str) -> Gender:
+def str2gender(ctx, param, val: Union[str, Gender]) -> Gender:
     if isinstance(val, Gender):
         return val
+
     try:
         return Gender[val.upper()]
     except KeyError:

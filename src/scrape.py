@@ -4,7 +4,7 @@ import datetime
 import logging
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List
 from urllib.parse import parse_qsl, urlparse
 
 import click
