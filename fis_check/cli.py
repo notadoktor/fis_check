@@ -6,9 +6,9 @@ from typing import List, Optional, Union
 
 import click
 
-import scrape
-from enums import EventType, Gender, RunStatus, Status
-from util import RaceFilter
+from . import scrape
+from .enums import EventType, Gender, RunStatus, Status
+from .util import RaceFilter
 
 
 def str2event(ctx, param, val_list: str) -> List[EventType]:
@@ -56,10 +56,7 @@ def pos_int(ctx, param, val: int):
 @click.option("--speed", is_flag=True, help="show Super G and Downhill")
 @click.option("--tech", is_flag=True, help="show Slalom and GS")
 @click.option(
-    "--gender",
-    callback=str2gender,
-    default=Gender.All,
-    help="show events for just M or F",
+    "--gender", callback=str2gender, default=Gender.All, help="show events for just M or F",
 )
 @click.option("--summarize/--no-summarize", default=True, help="show race summary")
 @click.option(
@@ -125,7 +122,7 @@ def main(
             print(ev.place)
             for er in ev_races:
                 # breakpoint()
-                er_info = [str(er.date), er.event.value]
+                er_info = [str(er.date), str(er.gender), er.event.value]
                 if len(er.runs) and Status.Cancelled not in er.status:
                     if not all(
                         [not r.status or r.status == RunStatus.OfficialResults for r in er.runs]

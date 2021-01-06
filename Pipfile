@@ -11,6 +11,8 @@ sqlalchemy = "*"
 fastapi = "*"
 psycopg2 = "*"
 pytz = "*"
+alembic = "*"
+pipenv-setup = "*"
 
 [dev-packages]
 pdbpp = "*"

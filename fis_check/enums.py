@@ -68,7 +68,7 @@ class Country(str, Enum):
     CAN = "Canada"
     CHL = "Chile"
     CHN = "China"
-    HRV = "Croatia"
+    CRO = "Croatia"
     CZE = "Czechia"
     DNK = "Denmark"
     EST = "Estonia"

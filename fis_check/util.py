@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, NamedTuple, Optional
 
 import pytz
 
-from enums import Category, EventType, Gender, RunStatus, Status
+from .enums import Category, EventType, Gender, RunStatus, Status
 
 cache_dir = Path("~/.cache/fis_check").expanduser()
 tz_cet: datetime.tzinfo = pytz.timezone("cet")
@@ -25,8 +25,8 @@ class RaceFilter(NamedTuple):
 
 class RaceRun(NamedTuple):
     run: int
-    cet: datetime.time
-    loc: datetime.time
+    cet: Optional[datetime.time]
+    loc: Optional[datetime.time]
     status: Optional[RunStatus]
     info: Optional[str] = None
 
@@ -67,8 +67,7 @@ class Cache:
     def filename(self) -> str:
         if self.params:
             id_str = b64encode(
-                "&".join([f"{k}={v}" for k, v in self.params.items()]).encode("utf-8"),
-                b"_-",
+                "&".join([f"{k}={v}" for k, v in self.params.items()]).encode("utf-8"), b"_-",
             ).decode("utf-8")
             return f"{self.key}_{id_str}"
         return self.key

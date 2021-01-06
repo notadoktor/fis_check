@@ -4,18 +4,66 @@ import datetime
 import logging
 import re
 from collections import defaultdict
-from typing import Any, Dict, List
-from urllib.parse import parse_qsl, urlparse
+from typing import Any, Dict, List, Tuple, Union
+from urllib.parse import parse_qsl, urlencode, urlparse
 
-import click
 import requests
 from bs4 import BeautifulSoup
 
-from enums import Category, Country, Discipline, EventType, Gender, RunStatus, Status
-from util import Cache, RaceFilter, RaceRun, merge_status, tz_cet, tz_local
+from .enums import Category, Country, Discipline, EventType, Gender, RunStatus, Status
+from .util import Cache, RaceFilter, RaceRun, merge_status, tz_cet, tz_local
 
 
 hidden_class = r"hidden-[^-\s]+?-up"
+
+
+class EventNotFound(Exception):
+    def __init__(
+        self, eventid: str, seasoncode: str, sectorcode: Discipline, msg: str = None
+    ) -> None:
+        if msg is None:
+            msg = f"Unable to find an event matching eventid={eventid} seasoncode={seasoncode} sectorcode={sectorcode}"
+        super().__init__(msg)
+        self.eventid = eventid
+        self.seasoncode = seasoncode
+        self.sectorcode = sectorcode
+
+
+class RaceNotFound(Exception):
+    pass
+
+
+class ResultNotFound(Exception):
+    pass
+
+
+class RacerNotFound(Exception):
+    pass
+
+
+def get_body(
+    url: str, params: Dict[str, Any] = {}, cache: Cache = None, skip_cache: bool = False
+) -> BeautifulSoup:
+    str_params = {str(k): str(v) for k, v in params.items()}
+    if cache is None:
+        parsed = urlparse(url)
+        if parsed.path[1:]:
+            cache_key = urlparse(url).path[1:].replace("/", "_")
+        else:
+            cache_key = parsed.netloc
+        cache = Cache(f"{cache_key}_raw", params=str_params)
+
+    if not skip_cache and not cache.expired:
+        body_text = cache.load()
+    else:
+        resp = requests.get(url, params=str_params)
+        if not resp.ok:
+            logging.error(f"{resp.status_code}: {resp.text}")
+            exit(1)
+        body_text = resp.text
+        cache.write(body_text)
+
+    return BeautifulSoup(body_text, "lxml")
 
 
 def visible_a(tag) -> bool:
@@ -55,7 +103,7 @@ class Calendar:
             "calendar_form", ctype="json", expire_in=datetime.timedelta(days=90)
         )
         self.event_cache = Cache("calendar_events")
-        self._events: List["CalendarEvent"] = []
+        self._events: List["Event"] = []
         self._options: Dict[str, Any] = {}
 
     @property
@@ -98,45 +146,45 @@ class Calendar:
         return cal_qs
 
     def _load_options(self, skip_cache: bool = False):
-        if not skip_cache and not self.form_cache.expired:
+        if self.form_cache.expired or skip_cache:
+            resp = requests.get(self.url)
+            if not resp.ok:
+                logging.error(f"{resp.status_code}: {resp.text}")
+                exit(1)
+            bs = BeautifulSoup(resp.text, "lxml")
+
+            self._options = defaultdict(dict)
+            form = bs.find("form", attrs={"id": "calendar-filter"})
+            if form is None:
+                logging.error("Could not find the calendar form")
+                exit(1)
+
+            # grab inputs with defaults/restrictions
+            for i in form.find_all("input"):
+                self._options[i["id"]] = {
+                    "type": "input",
+                    "default": i["value"],
+                    "pattern": i.get("pattern", None),
+                    "maxlength": i.get("maxlength", None),
+                }
+
+            # grab selects with defaults
+            for sel in form.find_all("select"):
+                sel_options = self._options[sel["id"]]
+                sel_options["type"] = "select"
+                sel_options["opts"] = {}
+                if "multiple" in sel.attrs:
+                    sel_options["multiple"] = True
+                for opt in sel.find_all("option"):
+                    if "disabled" in opt.attrs:
+                        continue
+                    if "selected" in opt.attrs:
+                        sel_options["default"] = opt["value"]
+                    sel_options["opts"][opt.string] = opt["value"]
+
+            self.form_cache.write(self._options)
+        else:
             self._options = self.form_cache.load()
-
-        resp = requests.get(self.url)
-        if not resp.ok:
-            logging.error(f"{resp.status_code}: {resp.text}")
-            exit(1)
-        bs = BeautifulSoup(resp.text, "lxml")
-
-        self._options = defaultdict(dict)
-        form = bs.find("form", attrs={"id": "calendar-filter"})
-        if form is None:
-            logging.error("Could not find the calendar form")
-            exit(1)
-
-        # grab inputs with defaults/restrictions
-        for i in form.find_all("input"):
-            self._options[i["id"]] = {
-                "type": "input",
-                "default": i["value"],
-                "pattern": i.get("pattern", None),
-                "maxlength": i.get("maxlength", None),
-            }
-
-        # grab selects with defaults
-        for sel in form.find_all("select"):
-            sel_options = self._options[sel["id"]]
-            sel_options["type"] = "select"
-            sel_options["opts"] = {}
-            if "multiple" in sel.attrs:
-                sel_options["multiple"] = True
-            for opt in sel.find_all("option"):
-                if "disabled" in opt.attrs:
-                    continue
-                if "selected" in opt.attrs:
-                    sel_options["default"] = opt["value"]
-                sel_options["opts"][opt.string] = opt["value"]
-
-        self.form_cache.write(self._options)
 
     def parse_date(self, date_str: str) -> List[datetime.date]:
         days, month, year = date_str.split()
@@ -149,61 +197,64 @@ class Calendar:
             date_list.append(datetime.datetime.strptime(f"{dom} {month} {year}", "%d %b %Y").date())
         return date_list
 
-    def scan(self, skip_cache: bool = False, **kwargs) -> List["CalendarEvent"]:
+    def scan(self, skip_cache: bool = False, **kwargs) -> List["Event"]:
         cal_qs = self._build_query(**kwargs)
         self.event_cache.params = cal_qs.copy()
-        if not skip_cache and not self.event_cache.expired:
-            self._events = self.event_cache.load()
-            logging.debug(f"Using cached event data")
-            return self._events
 
-        self._load_options(skip_cache)
-
-        cal_page = BeautifulSoup(self.text(cal_qs), "lxml")
-        cal = cal_page.find("div", attrs={"id": "calendarloadcontainer", "class": "section__body"})
-        cal_header = [
-            d.string
-            for d in cal.find("div", attrs={"class": "table__head"}).div.div.div.children
-            if visible_div(d)
-        ]
-
-        cal_body = cal.find("div", attrs={"id": "calendardata", "class": "tbody"})
-        events: List[CalendarEvent] = []
-        for cal_row in cal_body.children:
-            if cal_row.name != "div":
-                continue
-            row_data = cal_row.find("div", attrs={"class": "g-row"})
-            event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
-            event_data = {"id": cal_row["id"]}
-            event_data["status"] = merge_status(
-                [s["title"] for s in event_raw["Status"].find_all("span")]
+        if self.event_cache.expired or skip_cache:
+            cal_page = get_body(self.url, cal_qs, skip_cache=skip_cache)
+            cal = cal_page.find(
+                "div", attrs={"id": "calendarloadcontainer", "class": "section__body"}
             )
-
-            event_data["dates"] = self.parse_date(event_raw["Date"].string)
-            if event_data["dates"][0] > datetime.date.today():
-                break
-            event_data["place"] = str(event_raw["Place"].div.string)
-            event_data["country"] = Country[
-                event_raw["Country"].find("span", attrs={"class": "country__name-short"}).string
+            cal_header = [
+                d.string
+                for d in cal.find("div", attrs={"class": "table__head"}).div.div.div.children
+                if visible_div(d)
             ]
 
-            event_data["discipline"] = Discipline[event_raw["Disc."].string]
-            cats, evs = [
-                d.div.string for d in event_raw["Category & Event"].div.contents if d.name == "div"
-            ]
-            if " • " in cats:
-                event_data["categories"] = [Category[k] for k in cats.split(" • ")]
-            else:
-                event_data["categories"] = [Category[cats]]
+            cal_body = cal.find("div", attrs={"id": "calendardata", "class": "tbody"})
+            events: List[Event] = []
+            for cal_row in cal_body.children:
+                if cal_row.name != "div":
+                    continue
+                row_data = cal_row.find("div", attrs={"class": "g-row"})
+                event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
+                event_data = {"id": cal_row["id"]}
+                event_data["status"] = merge_status(
+                    [s["title"] for s in event_raw["Status"].find_all("span")]
+                )
 
-            if " • " in evs:
-                event_data["events"] = [EventType[re.sub(r"^\dx", "", k)] for k in evs.split(" • ")]
-            else:
-                event_data["events"] = [EventType[re.sub(r"^\dx", "", evs)]]
-            event_data["gender"] = Gender[event_raw["Gender"].div.div.div.string]
-            events.append(CalendarEvent(**event_data))
-        self._events = events
-        self.event_cache.write(self._events)
+                event_data["dates"] = self.parse_date(event_raw["Date"].string)
+                if event_data["dates"][0] > datetime.date.today():
+                    break
+                event_data["place"] = str(event_raw["Place"].div.string)
+                event_data["country"] = Country[
+                    event_raw["Country"].find("span", attrs={"class": "country__name-short"}).string
+                ]
+
+                event_data["discipline"] = Discipline[event_raw["Disc."].string]
+                cats, evs = [
+                    d.div.string
+                    for d in event_raw["Category & Event"].div.contents
+                    if d.name == "div"
+                ]
+                if " • " in cats:
+                    event_data["categories"] = [Category[k] for k in cats.split(" • ")]
+                else:
+                    event_data["categories"] = [Category[cats]]
+
+                if " • " in evs:
+                    event_data["events"] = [
+                        EventType[re.sub(r"^\dx", "", k)] for k in evs.split(" • ")
+                    ]
+                else:
+                    event_data["events"] = [EventType[re.sub(r"^\dx", "", evs)]]
+                event_data["gender"] = Gender[event_raw["Gender"].div.div.div.string]
+                events.append(Event(**event_data))
+            self._events = events
+            self.event_cache.write(self._events)
+        else:
+            self._events = self.event_cache.load()
         return self._events
 
     def text(self, qs: Dict[str, str], skip_cache: bool = False) -> str:
@@ -221,7 +272,7 @@ class Calendar:
             return self.cache.load()
 
 
-class CalendarEvent:
+class Event:
     url: str = "https://www.fis-ski.com/DB/general/event-details.html"
 
     def __init__(
@@ -249,35 +300,42 @@ class CalendarEvent:
         self.status = status
         self._races: List["Race"] = list()
 
+    @classmethod
+    def load(cls, event_id: str, season_code: str, sector_code: Discipline) -> "Event":
+        event_params = {"id": event_id, "seasoncode": season_code, "discipline": sector_code}
+        races = cls._load_races(event_id, season_code, sector_code)
+        if len(races) == 0:
+            raise EventNotFound(event_id, season_code, sector_code)
+        event_params["dates"] = [r.date for r in races]
+
+        raise NotImplemented
+
+    @classmethod
+    def _get_place(
+        cls, event_id: str, season_code: str, sector_code: Discipline
+    ) -> Tuple[str, Country]:
+        raise NotImplemented
+
     def __repr__(self) -> str:
-        return f"<CalendarEvent id={self.id} place=\"{self.place}\" gender={self.gender.name} events={','.join([e.name for e in self.events])} start={self.dates[0]}>"
+        return f"<Event id={self.id} place=\"{self.place}\" gender={self.gender.name} events={','.join([e.name for e in self.events])} start={self.dates[0]}>"
 
     def races(self, skip_cache=False, f: RaceFilter = None) -> List["Race"]:
         if not self._races or skip_cache:
-            self.load_races(skip_cache)
+            self._races = self._load_races(self.id, self.seasoncode, self.discipline)
 
         if f:
             return [r for r in self._races if r.filtered(f)]
         return self._races
 
-    def load_races(self, skip_cache: bool = False) -> List["Race"]:
-        if self._races and not skip_cache:
-            logging.debug(f"using cached race data for {self}")
-            return self._races
-
+    @classmethod
+    def _load_races(cls, event_id: str, season_code: str, sector_code: Discipline) -> List["Race"]:
         event_qs = {
-            "sectorcode": self.discipline.name,
-            "seasoncode": self.seasoncode,
-            "eventid": self.id,
+            "sectorcode": sector_code,
+            "seasoncode": season_code,
+            "eventid": event_id,
         }
-        event_resp = requests.get(self.url, params=event_qs)
-        if not event_resp.ok:
-            logging.error(f"{event_resp.status_code}: {event_resp.text}")
-            breakpoint()
-            exit(1)
-        # breakpoint()
 
-        event_page = BeautifulSoup(event_resp.text, "lxml")
+        event_page = get_body(cls.url, event_qs)
         race_table = event_page.find("div", attrs={"class": "table_pb"})
         header_obj, subheader_obj = [
             d.div.div for d in race_table.find_all("div", attrs={"class": "thead"})
@@ -291,6 +349,7 @@ class CalendarEvent:
             if d.name == "div"
         ]
 
+        all_races: List[Race] = []
         body_obj = race_table.find("div", attrs={"class": "table__body"})
         for day_obj in [d.div.div.div for d in body_obj.children if d.name == "div"]:
             race_raw = dict(
@@ -338,11 +397,17 @@ class CalendarEvent:
                     run = dict()
                     run["run"] = int(re.sub(r"\D", "", run_raw["run"]))
 
-                    cet_hour, cet_minute = [int(t) for t in run_raw["cet"].split(":")]
-                    run["cet"] = datetime.time(cet_hour, cet_minute, tzinfo=tz_cet)
+                    if run_raw["cet"] and ":" in run_raw["cet"]:
+                        cet_hour, cet_minute = [int(t) for t in run_raw["cet"].split(":")]
+                        run["cet"] = datetime.time(cet_hour, cet_minute, tzinfo=tz_cet)
+                    else:
+                        run["cet"] = None
 
-                    loc_hour, loc_minute = [int(t) for t in run_raw["loc"].split(":")]
-                    run["loc"] = datetime.time(loc_hour, loc_minute, tzinfo=tz_local)
+                    if run_raw["loc"] and ":" in run_raw["loc"]:
+                        loc_hour, loc_minute = [int(t) for t in run_raw["loc"].split(":")]
+                        run["loc"] = datetime.time(loc_hour, loc_minute, tzinfo=tz_local)
+                    else:
+                        run["loc"] = None
 
                     if run_raw.get("status"):
                         run["status"] = RunStatus(run_raw["status"].title().replace(" ", ""))
@@ -355,9 +420,8 @@ class CalendarEvent:
             race_args["comments"] = race_raw["Comments"].string if race_raw.get("Comments") else ""
 
             # breakpoint()
-            self._races.append(Race(**race_args))
-
-        return self._races
+            all_races.append(Race(**race_args))
+        return all_races
 
 
 class Race:
@@ -424,15 +488,9 @@ class Race:
     def load_results(self, skip_cache: bool = False):
         if not self._results or skip_cache:
             qs = {"raceid": self.id, "sectorcode": "AL"}
-            resp = requests.get(Race.url, params=qs)
-            if not resp.ok:
-                logging.error(f"{resp.status_code}: {resp.text}")
-                breakpoint()
-                exit(1)
+            result_body = get_body(Race.url, qs)
 
-            result_table = (
-                BeautifulSoup(resp.text, "lxml").find("div", id="events-info-results").div
-            )
+            result_table = result_body.find("div", id="events-info-results").div
             result_rows = [a for a in result_table.children if a.name == "a"]
             header = [
                 "rank",
