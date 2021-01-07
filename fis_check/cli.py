@@ -80,6 +80,7 @@ def pos_int(ctx, param, val: int):
     show_default=True,
 )
 @click.option("--skip-cache", is_flag=True, help="Fetch new data from the fis website")
+@click.option("--debug", "-D", is_flag=True, help="set log level to debug")
 def main(
     events: List[EventType],
     speed: bool,
@@ -92,8 +93,10 @@ def main(
     max_date: datetime.date,
     num_days: int,
     skip_cache: bool,
+    debug: bool,
 ):
-    # breakpoint()
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
     date_range = datetime.timedelta(days=num_days)
     if min_date is None:
         min_date = max_date - date_range
