@@ -10,6 +10,9 @@ sync_setup: ## syncs setup.py packages to match Pipfile.lock
 install: pipenv sync_setup ## installs fis_check
 	pip install -e .
 
+pipx_install: pipenv sync_setup ## install (static) fis_check with pipx
+	pipx install .
+
 clean: ## removes existing venvs, Pipfile.lock, misc temp files
 	-rm -rf .venv Pipfile.lock
 	-find . -name '*.pyc' -delete -print
