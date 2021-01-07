@@ -1,4 +1,0 @@
-#!/bin/bash -e
-
-cd FIS_ROOT
-exec pipenv run python src/fis_check.py "$@"
