@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
-
 import datetime
+import json
 import logging
 from typing import List, Optional, Union
 
@@ -81,7 +80,9 @@ def pos_int(ctx, param, val: int):
 )
 @click.option("--skip-cache", is_flag=True, help="Fetch new data from the fis website")
 @click.option("--debug", "-D", is_flag=True, help="set log level to debug")
+@click.pass_context
 def main(
+    ctx: click.Context,
     events: List[EventType],
     speed: bool,
     tech: bool,
@@ -95,8 +96,10 @@ def main(
     skip_cache: bool,
     debug: bool,
 ):
+    print("sup")
     if debug:
-        logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger("root").setLevel(logging.DEBUG)
+        logging.debug(f"params: {json.dumps({k: repr(v) for k, v in ctx.params.items()})}")
     date_range = datetime.timedelta(days=num_days)
     if min_date is None:
         min_date = max_date - date_range
@@ -110,10 +113,15 @@ def main(
     cal = scrape.Calendar()
     cal_events = cal.scan(skip_cache=skip_cache)
     for ev in cal_events:
-        if ev.dates[0] < min_date:
+        if ev.dates[-1] < min_date:
+            continue
+        elif ev.dates[0] > max_date:
             continue
         elif ev.dates[0] > datetime.date.today():
+            # nothing in the future will have results
             break
+        elif ev.dates[0] > max_date:
+            continue
         elif ev.gender not in gender:
             continue
         elif event_filter and not any([e in event_filter for e in ev.events]):
@@ -124,7 +132,6 @@ def main(
         if ev_races:
             print(ev.place)
             for er in ev_races:
-                # breakpoint()
                 er_info = [str(er.date), str(er.gender), er.event.value]
                 if len(er.runs) and Status.Cancelled not in er.status:
                     if not all(
