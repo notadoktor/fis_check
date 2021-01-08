@@ -1,23 +1,25 @@
+from fis_check.enums import Discipline
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas, scrape
-from .db import SessionLocal, engine
+from .db import DB
 
 app = FastAPI()
 
 
 def get_db():
-    db = SessionLocal()
+    db = DB()
+    db.ensure_db()
     try:
-        yield db
+        yield db.session
     finally:
-        db.close()
+        db.session.close()
 
 
 @app.get("/")
 async def root():
-    pass
+    return {}
 
 
 @app.get("/calendar")
@@ -27,10 +29,18 @@ async def get_cal():
 
 
 @app.get("/event/{eventid}", response_model=schemas.Event)
-async def get_cal_event(eventid: int, db: Session = Depends(get_db)):
+async def get_cal_event(
+    eventid: int, seasoncode: int = 2021, sectorcode: str = "AL", db: Session = Depends(get_db)
+):
+    breakpoint()
     db_event = crud.get_event(db, eventid)
     if db_event is None:
-        event = scrape.Event(id=str(eventid))
+        event = scrape.Event.load(
+            event_id=str(eventid), season_code=str(seasoncode), sector_code=Discipline[sectorcode]
+        )
+        return event
+    else:
+        return db_event
 
 
 @app.get("/event/{eventid}/races")

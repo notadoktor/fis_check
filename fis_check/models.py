@@ -16,7 +16,7 @@ class Event(Base):
     discipline = Column(Enum(Discipline), nullable=False)
     status = Column(Enum(Status))
 
-    races = relationship("Race", back_populates="races")
+    races = relationship("Race", back_populates="event")
 
 
 class Race(Base):
@@ -32,9 +32,9 @@ class Race(Base):
     comments = Column(String)
     live_url = Column(String)
 
-    runs = relationship("Run", back_populates="runs")
-    parent = relationship("Event", back_populates="events")
-    result = relationship("Result", back_populates="results")
+    runs = relationship("Run", back_populates="race")
+    event = relationship("Event", back_populates="races")
+    result = relationship("Result", back_populates="race")
 
 
 class Run(Base):
@@ -46,7 +46,7 @@ class Run(Base):
     status = Column(Enum(RunStatus))
     info = Column(String)
 
-    parent = relationship("Race", back_populates="races")
+    race = relationship("Race", back_populates="runs")
 
 
 class Racer(Base):
@@ -62,7 +62,7 @@ class Racer(Base):
     boots = Column(String)
     poles = Column(String)
 
-    results = relationship("Result", back_populates="results")
+    results = relationship("Result", back_populates="racer")
 
 
 class Result(Base):
@@ -77,5 +77,5 @@ class Result(Base):
     fis_points = Column(Float)
     cup_points = Column(Integer)
 
-    parent = relationship("Race", back_populates="races")
-    racer = relationship("Racer", back_populates="racers")
+    race = relationship("Race", back_populates="result")
+    racer = relationship("Racer", back_populates="results")
