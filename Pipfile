@@ -8,7 +8,7 @@ bs4 = "*"
 requests = "*"
 lxml = "*"
 sqlalchemy = "*"
-fastapi = "*"
+fastapi = {extras = ["all"], version = "*"}
 psycopg2 = "*"
 pytz = "*"
 alembic = "*"
