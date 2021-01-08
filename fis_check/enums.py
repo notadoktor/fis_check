@@ -173,6 +173,7 @@ class RunStatus(str, Enum):
     Scheduled = "Scheduled"
     Rescheduled = "Rescheduled"
     OfficialResults = "OfficialResults"
+    OfficialResult = OfficialResults
 
 
 class Gender(IntFlag):

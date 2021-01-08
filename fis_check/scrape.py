@@ -460,7 +460,9 @@ class Race:
             return False
         if len(f.event) and self.event not in f.event:
             return False
-        if f.date and self.date != f.date:
+        if f.min_date and self.date < f.min_date:
+            return False
+        if f.max_date and self.date > f.max_date:
             return False
         if f.gender and self.gender not in f.gender:
             return False

@@ -17,7 +17,8 @@ tz_local: datetime.tzinfo = datetime.datetime.now().astimezone().tzinfo  # type:
 class RaceFilter(NamedTuple):
     category: Category = Category.WC
     event: set[EventType] = set()
-    date: Optional[datetime.date] = None
+    min_date: Optional[datetime.date] = None
+    max_date: Optional[datetime.date] = None
     gender: Optional[Gender] = None
     live_url: Optional[bool] = None
     status: Optional[Status] = Status.ResultsAvailable
