@@ -6,6 +6,7 @@ from .enums import Category, Country, Discipline, EventType, Gender, RunStatus, 
 
 
 class EventBase(BaseModel):
+    id: int
     place: str
     country: Country
     gender: Gender
@@ -14,7 +15,7 @@ class EventBase(BaseModel):
 
 
 class Event(EventBase):
-    id: int
+    # races: List["Race"]
 
     class Config:
         orm_mode = True
@@ -26,7 +27,7 @@ class RaceBase(BaseModel):
     category: Category
     codex: int
     date: datetime.date
-    event: EventType
+    event_type: EventType
     gender: Gender
 
 
@@ -96,3 +97,12 @@ class Racer(RacerBase):
 
     class Config:
         orm_mode = True
+
+
+###
+
+Event.update_forward_refs()
+Race.update_forward_refs()
+Run.update_forward_refs()
+Result.update_forward_refs()
+Racer.update_forward_refs()

@@ -32,15 +32,26 @@ async def get_cal():
 async def get_cal_event(
     eventid: int, seasoncode: int = 2021, sectorcode: str = "AL", db: Session = Depends(get_db)
 ):
-    breakpoint()
     db_event = crud.get_event(db, eventid)
+    scraped_event = None
     if db_event is None:
         event = scrape.Event.load(
             event_id=str(eventid), season_code=str(seasoncode), sector_code=Discipline[sectorcode]
         )
-        return event
-    else:
-        return db_event
+        db_event = crud.create_event(db, schemas.EventBase(**event.__dict__))
+
+    if not db_event.races:
+        if not scraped_event:
+            scraped_event = scrape.Event.load(
+                str(db_event.id), str(db_event.seasoncode), db_event.discipline, True  # type: ignore
+            )
+        for r in scraped_event.races:
+            rdict = r.__dict__.copy()
+            rdict["event_id"] = str(eventid)
+            crud.create_race(db, schemas.RaceBase(**rdict))
+        db.refresh(db_event)
+    # breakpoint()
+    return db_event
 
 
 @app.get("/event/{eventid}/races")

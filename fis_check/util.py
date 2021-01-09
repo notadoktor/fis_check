@@ -4,6 +4,7 @@ import pickle
 from base64 import b64encode
 from pathlib import Path
 from typing import Any, Dict, List, Literal, NamedTuple, Optional
+from urllib.parse import urlparse
 
 import pytz
 
@@ -16,7 +17,7 @@ tz_local: datetime.tzinfo = datetime.datetime.now().astimezone().tzinfo  # type:
 
 class RaceFilter(NamedTuple):
     category: Category = Category.WC
-    event: set[EventType] = set()
+    event_types: set[EventType] = set()
     min_date: Optional[datetime.date] = None
     max_date: Optional[datetime.date] = None
     gender: Optional[Gender] = None
@@ -26,6 +27,7 @@ class RaceFilter(NamedTuple):
 
 class RaceRun(NamedTuple):
     run: int
+    race_id: str
     cet: Optional[datetime.time]
     loc: Optional[datetime.time]
     status: Optional[RunStatus]
@@ -35,32 +37,46 @@ class RaceRun(NamedTuple):
 class Cache:
     root_dir: Path
     key: str
-    expire_in: datetime.timedelta
+    expire_after: datetime.timedelta
     ctype: Literal["pickle", "json"]
     params: Optional[Dict[str, str]]
 
     def __init__(
         self,
-        key: str,
+        key: str = None,
+        url: str = None,
         root_dir: Path = cache_dir,
-        expire_in: datetime.timedelta = datetime.timedelta(days=1),
+        expire_after: datetime.timedelta = datetime.timedelta(days=1),
         params: Dict[str, str] = None,
         ctype: Literal["pickle", "json"] = "pickle",
     ) -> None:
+        if key:
+            self.key = key
+        elif url:
+            parsed = urlparse(url)
+            if parsed.path[1:]:
+                self.key = urlparse(url).path[1:].replace("/", "_")
+            else:
+                self.key = parsed.netloc
+        else:
+            raise KeyError("You must specify key or url")
         self.root_dir = root_dir
-        self.key = key
         self.ctype = ctype
-        self.expire_in = expire_in
+        self.expire_after = expire_after
         self.params = params
+
+    @property
+    def age(self) -> datetime.timedelta:
+        if not self.path.exists():
+            raise OSError(f"Cache file {self.path} does not exist")
+        mtime = datetime.datetime.fromtimestamp(self.path.stat().st_mtime)
+        return datetime.datetime.now() - mtime
 
     @property
     def expired(self) -> bool:
         if not self.path.exists() or self.path.stat().st_size == 0:
             return True
-        if (
-            datetime.datetime.fromtimestamp(self.path.stat().st_mtime)
-            < datetime.datetime.now() - self.expire_in
-        ):
+        if self.age > self.expire_after:
             return True
         return False
 

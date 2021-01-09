@@ -186,6 +186,7 @@ class Gender(IntFlag):
 
 
 class Status(IntFlag):
+    Pending = 0
     ResultsAvailable = auto()
     PDFAvailable = auto()
     CheckChanges = auto()

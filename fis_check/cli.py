@@ -124,15 +124,15 @@ def main(
             continue
         elif ev.gender not in gender:
             continue
-        elif event_filter and not any([e in event_filter for e in ev.events]):
+        elif event_filter and not any([e in event_filter for e in ev.event_types]):
             continue
 
-        rf = RaceFilter(status=Status.ResultsAvailable, event=event_filter)
-        ev_races = ev.races(skip_cache=skip_cache, f=rf)
+        rf = RaceFilter(status=Status.ResultsAvailable, event_types=event_filter)
+        ev_races = ev.filter_races(f=rf)
         if ev_races:
             print(ev.place)
             for er in ev_races:
-                er_info = [str(er.date), str(er.gender), er.event.value]
+                er_info = [str(er.date), str(er.gender), er.event_type.value]
                 if len(er.runs) and Status.Cancelled not in er.status:
                     if not all(
                         [not r.status or r.status == RunStatus.OfficialResults for r in er.runs]

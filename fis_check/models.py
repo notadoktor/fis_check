@@ -26,7 +26,7 @@ class Race(Base):
     category = Column(Enum(Category), index=True, nullable=False)
     codex = Column(Integer, nullable=False)
     date = Column(Date, nullable=False)
-    event = Column("event_type", Enum(EventType), nullable=False)
+    event_type = Column(Enum(EventType), nullable=False)
     gender = Column(Enum(Gender), nullable=False)
     status = Column(Enum(Status))
     comments = Column(String)
