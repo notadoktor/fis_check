@@ -228,7 +228,7 @@ class Calendar:
                 logging.debug(f"status: {event_data['status']}")
 
                 event_data["dates"] = self.parse_date(event_raw["Date"].string)
-                logging.debug(f"dates: {event_data['dates']}")
+                logging.debug(f"dates: {', '.join([str(dt) for dt in event_data['dates']])}")
                 if event_data["dates"][0] > datetime.date.today():
                     logging.debug(f"start date is in the future, ending scan")
                     break

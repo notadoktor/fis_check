@@ -1,4 +1,5 @@
 from enum import Enum, IntFlag, auto
+from typing import List, Union, overload
 
 
 class Category(str, Enum):
@@ -123,6 +124,7 @@ class Country(str, Enum):
     SGP = "Singapore"
     SVK = "Slovakia"
     SVN = "Slovenia"
+    SLO = SVN
     ZAF = "South Africa"
     ESP = "Spain"
     SWE = "Sweden"
@@ -167,6 +169,9 @@ class EventType(str, Enum):
     PGS = "Parallel Giant Slalom"
     TP = "Team Parallel"
 
+    def __str__(self) -> str:
+        return self.value
+
 
 class RunStatus(str, Enum):
     Cancelled = "Cancelled"
@@ -177,7 +182,33 @@ class RunStatus(str, Enum):
     OfficialResult = OfficialResults
 
 
-class Gender(IntFlag):
+class NiceFlag(IntFlag):
+    @property
+    def contents(self) -> List["NiceFlag"]:
+        if self.is_compound:
+            all_flags = []
+            for flag_name, flag_obj in self.__class__.__members__.items():
+                if flag_obj.value == 0:
+                    # skip null flags on compound objects
+                    continue
+                if flag_obj in self:
+                    all_flags.append(flag_obj)
+        else:
+            all_flags = [self]
+
+        return all_flags
+
+    @property
+    def is_compound(self) -> bool:
+        return self.name is None
+
+    def __str__(self) -> str:
+        if self.is_compound:
+            return ", ".join([str(f) for f in self.contents])
+        return self.name
+
+
+class Gender(NiceFlag):
     M = auto()
     W = auto()
     All = M | W
@@ -186,7 +217,7 @@ class Gender(IntFlag):
         return "" if self.name == "All" else self.name
 
 
-class Status(IntFlag):
+class Status(NiceFlag):
     Pending = 0
     ResultsAvailable = auto()
     PDFAvailable = auto()
