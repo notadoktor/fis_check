@@ -19,6 +19,17 @@ clean: ## removes existing venvs, Pipfile.lock, misc temp files
 
 clean_install: clean install ## runs make clean install
 
+.PHONY: start
+start: ## starts uvicorn in the foreground
+	uvicorn fis_check.api:app --reload
+
+.PHONY: reset_db
+reset_db:
+	-docker rm -f psqlol
+	docker run -d --name psqlol -p 5432:5432 --env-file .env.db postgres:12
+	# alembic upgrade head
+
+
 .PHONY: help
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
