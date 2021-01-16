@@ -1,9 +1,14 @@
-from sqlalchemy import Column, Date, Enum, Float, Integer, String, Time
+from sqlalchemy import Column, Date, DateTime, Enum, Float, Integer, String, Time, MetaData
+from sqlalchemy.ext.declarative.api import declarative_base
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from sqlalchemy.sql.schema import ForeignKey
 
-from .db import Base
 from .enums import Category, Country, Discipline, EventType, Gender, RunStatus, Status
+
+md: MetaData = MetaData()
+Base = declarative_base()
+Base.metadata = md
 
 
 class Event(Base):
@@ -15,6 +20,7 @@ class Event(Base):
     seasoncode = Column(Integer, nullable=False)
     discipline = Column(Enum(Discipline), nullable=False)
     status = Column(Enum(Status))
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     races = relationship("Race", back_populates="event")
 
@@ -28,9 +34,10 @@ class Race(Base):
     date = Column(Date, nullable=False)
     event_type = Column(Enum(EventType), nullable=False)
     gender = Column(Enum(Gender), nullable=False)
-    status = Column(Enum(Status))
+    status = Column(Integer)
     comments = Column(String)
     live_url = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     runs = relationship("Run", back_populates="race")
     event = relationship("Event", back_populates="races")
@@ -45,6 +52,7 @@ class Run(Base):
     loc = Column(Time)
     status = Column(Enum(RunStatus))
     info = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     race = relationship("Race", back_populates="runs")
 
@@ -61,6 +69,7 @@ class Racer(Base):
     skis = Column(String)
     boots = Column(String)
     poles = Column(String)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     results = relationship("Result", back_populates="racer")
 

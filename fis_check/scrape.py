@@ -461,7 +461,7 @@ class Event:
                         run["loc"] = None
 
                     if run_raw.get("status"):
-                        run["status"] = RunStatus(run_raw["status"].title().replace(" ", ""))
+                        run["status"] = RunStatus[run_raw["status"].title().replace(" ", "")]
                     else:
                         run["status"] = None
 

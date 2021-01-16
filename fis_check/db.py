@@ -1,23 +1,16 @@
-import os
-from pathlib import Path
-from typing import Optional, Union
-
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.engine import Engine
-from sqlalchemy.engine.url import make_url
-from sqlalchemy.ext.declarative.api import declarative_base
-from sqlalchemy.orm import scoped_session, session, sessionmaker
+from sqlalchemy.orm import scoped_session, sessionmaker
+
+from .models import Base
 
 # use PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE env vars for connection
 default_db_url = "postgresql://"
-md: MetaData = MetaData()
-Base = declarative_base()
-Base.metadata = md
 
 
 class DB(object):
     engine: Engine
-    metadata: MetaData = md
+    metadata: MetaData = Base.metadata
     session: scoped_session
 
     def __init__(self, db_url: str = default_db_url, engine: Engine = None) -> None:
@@ -49,5 +42,5 @@ class DB(object):
         assert (
             getattr(self, "session", None) is not None and getattr(self, "engine", None) is not None
         )
-        if not all([self.engine.has_table(t.name) for t in md.sorted_tables]):
+        if not all([self.engine.has_table(t.name) for t in self.metadata.sorted_tables]):
             self.create_db()

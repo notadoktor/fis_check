@@ -15,7 +15,7 @@ class EventBase(BaseModel):
 
 
 class Event(EventBase):
-    # races: List["Race"]
+    races: List["Race"]
 
     class Config:
         orm_mode = True
@@ -36,9 +36,8 @@ class Race(RaceBase):
     comments: Optional[str]
     live_url: Optional[str]
 
-    parent: Event
-    runs: List["Run"]
-    results: List["Result"]
+    # runs: List["Run"]
+    # results: List["Result"]
 
     class Config:
         orm_mode = True

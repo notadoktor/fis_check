@@ -48,9 +48,9 @@ async def get_cal_event(
         for r in scraped_event.races:
             rdict = r.__dict__.copy()
             rdict["event_id"] = str(eventid)
+            breakpoint()
             crud.create_race(db, schemas.RaceBase(**rdict))
         db.refresh(db_event)
-    # breakpoint()
     return db_event
 
 

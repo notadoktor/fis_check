@@ -172,7 +172,8 @@ class RunStatus(str, Enum):
     Cancelled = "Cancelled"
     Scheduled = "Scheduled"
     Rescheduled = "Rescheduled"
-    OfficialResults = "OfficialResults"
+    InProgress = "In Progress"
+    OfficialResults = "Official Results"
     OfficialResult = OfficialResults
 
 
