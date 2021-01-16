@@ -221,19 +221,27 @@ class Calendar:
                 row_data = cal_row.find("div", attrs={"class": "g-row"})
                 event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
                 event_data = {"id": cal_row["id"]}
+                logging.debug(f"processing eventid {event_data['id']}")
                 event_data["status"] = merge_status(
                     [s["title"] for s in event_raw["Status"].find_all("span")]
                 )
+                logging.debug(f"status: {event_data['status']}")
 
                 event_data["dates"] = self.parse_date(event_raw["Date"].string)
+                logging.debug(f"dates: {event_data['dates']}")
                 if event_data["dates"][0] > datetime.date.today():
+                    logging.debug(f"start date is in the future, ending scan")
                     break
+
                 event_data["place"] = str(event_raw["Place"].div.string)
+                logging.debug(f"place: {event_data['place']}")
                 event_data["country"] = Country[
                     event_raw["Country"].find("span", attrs={"class": "country__name-short"}).string
                 ]
+                logging.debug(f"country: {event_data['country']}")
 
                 event_data["discipline"] = Discipline[event_raw["Disc."].string]
+                logging.debug(f"discipline: {event_data['discipline']}")
                 cats, evs = [
                     d.div.string
                     for d in event_raw["Category & Event"].div.contents
@@ -243,14 +251,22 @@ class Calendar:
                     event_data["categories"] = [Category[k] for k in cats.split(" • ")]
                 else:
                     event_data["categories"] = [Category[cats]]
+                logging.debug(
+                    f"categories: {', '.join([str(c) for c in event_data['categories']])}"
+                )
 
                 if " • " in evs:
-                    event_data["events"] = [
+                    event_data["event_types"] = [
                         EventType[re.sub(r"^\dx", "", k)] for k in evs.split(" • ")
                     ]
                 else:
-                    event_data["events"] = [EventType[re.sub(r"^\dx", "", evs)]]
+                    event_data["event_types"] = [EventType[re.sub(r"^\dx", "", evs)]]
+                logging.debug(
+                    f"event_types: {', '.join([str(et) for et in event_data['event_types']])}"
+                )
+
                 event_data["gender"] = Gender[event_raw["Gender"].div.div.div.string]
+                logging.debug(f"gender: {event_data['gender']}")
                 new_event = Event(**event_data)
                 new_event.races
                 events.append(new_event)
