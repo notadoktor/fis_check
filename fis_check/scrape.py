@@ -4,6 +4,7 @@ import datetime
 import logging
 import re
 from collections import defaultdict
+from sys import path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
 from pydantic.typing import new_type_supertype
@@ -46,6 +47,10 @@ def get_body(
     url: str, params: Dict[str, Any] = {}, cache: Cache = None, skip_cache: bool = False
 ) -> BeautifulSoup:
     str_params = {str(k): str(v) for k, v in params.items()}
+    if params:
+        url_param_str = f"{url}?{urlencode(params)}"
+    else:
+        url_param_str = url
     if cache is None:
         parsed = urlparse(url)
         if parsed.path[1:]:
@@ -55,13 +60,16 @@ def get_body(
         cache = Cache(f"{cache_key}_raw", params=str_params)
 
     if not skip_cache and not cache.expired:
+        logging.debug(f"loading cached data for {url_param_str}")
         body_text = cache.load()
     else:
+        logging.debug(f"fetching new data for {url_param_str}")
         resp = requests.get(url, params=str_params)
         if not resp.ok:
             logging.error(f"{resp.status_code}: {resp.text}")
             exit(1)
         body_text = resp.text
+        logging.debug(f"writing data to {cache.path}")
         cache.write(body_text)
 
     return BeautifulSoup(body_text, "lxml")
@@ -203,6 +211,9 @@ class Calendar:
         self.event_cache.params = cal_qs.copy()
 
         if self.event_cache.expired or skip_cache:
+            logging.debug(
+                f"scraping new data, event_cache.expired={self.event_cache.expired}, skip_cache={skip_cache}"
+            )
             cal_page = get_body(self.url, cal_qs, skip_cache=skip_cache)
             cal = cal_page.find(
                 "div", attrs={"id": "calendarloadcontainer", "class": "section__body"}
@@ -484,7 +495,9 @@ class Event:
                     race_args["runs"].append(RaceRun(**run))
             else:
                 race_args["runs"] = []
-            race_args["comments"] = race_raw["Comments"].string if race_raw.get("Comments") else ""
+            race_args["comments"] = (
+                str(race_raw["Comments"].string) if race_raw.get("Comments") else ""
+            )
 
             all_races.append(Race(**race_args))
         return all_races

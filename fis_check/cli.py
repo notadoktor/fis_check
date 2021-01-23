@@ -96,7 +96,6 @@ def main(
     skip_cache: bool,
     debug: bool,
 ):
-    print("sup")
     if debug:
         logging.getLogger("root").setLevel(logging.DEBUG)
         logging.debug(f"params: {json.dumps({k: repr(v) for k, v in ctx.params.items()})}")

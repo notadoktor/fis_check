@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import pickle
 from base64 import b64encode
 from pathlib import Path
@@ -119,7 +120,13 @@ class Cache:
             raise ValueError(f"Invalid format: {self.ctype}")
 
         with self.path.open(mode) as fh:
-            fh.write(fmt(val))
+            try:
+                fh.write(fmt(val))
+            except RecursionError:
+                # RecursionError happens on bs4 objects, ensure scraped values are converted appropriately
+                logging.error(f"bad cache write to {self.path}: check val for problems")
+                breakpoint()
+                raise
 
 
 def merge_status(status_list: List[str]) -> Status:
