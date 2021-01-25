@@ -496,7 +496,9 @@ class Event:
             else:
                 race_args["runs"] = []
             race_args["comments"] = (
-                str(race_raw["Comments"].string) if race_raw.get("Comments") else ""
+                str(race_raw["Comments"].string)
+                if race_raw.get("Comments") and race_raw["Comments"].string
+                else ""
             )
 
             all_races.append(Race(**race_args))
@@ -524,6 +526,7 @@ class Race:
         self.category = category
         self.codex = codex
         self.date = date
+        self.event_id = event_id
         self.event_type = event_type
         self.gender = gender
         self.status = status
@@ -533,23 +536,34 @@ class Race:
         self._results: List["RaceResult"] = []
 
     def __repr__(self) -> str:
-        return f"<Race id={self.id} date={self.date} event={self.event_type} gender={self.gender}>"
+        return f"<Race id={self.id} eid={self.event_id} date={self.date} event={self.event_type} gender={self.gender}>"
 
     def filtered(self, f: RaceFilter) -> bool:
         if f.category and self.category != f.category:
+            logging.debug(f"{self} failed category filter: {self.category} != {f.category}")
             return False
         if len(f.event_types) and self.event_type not in f.event_types:
+            ef_str = ", ".join(sorted([str(ef) for ef in f.event_types]))
+            logging.debug(f"{self} failed event_type filter: {self.event_type} in ({ef_str})")
             return False
         if f.min_date and self.date < f.min_date:
+            logging.debug(f"{self} failed min_date filter: {self.date}")
             return False
         if f.max_date and self.date > f.max_date:
+            logging.debug(f"{self} failed max_date filter: {self.date}")
             return False
         if f.gender and self.gender not in f.gender:
+            logging.debug(f"{self} failed gender filter: {self.gender.name} in {f.gender.name}")
             return False
         if f.live_url is not None:
             if f.live_url != bool(self.live_url):
+                logging.info(f"{self} failed live_url filter")
                 return False
-        if f.status and self.status not in f.status:
+        if Status.Cancelled & self.status and (not f.status or Status.Cancelled not in f.status):
+            logging.info(f"{self} failed: cancelled")
+            return False
+        if f.status and not self.status & f.status:
+            logging.debug(f"{self} failed status filter: {self.status} & {f.status}")
             return False
         return True
 
@@ -658,6 +672,7 @@ class RaceResult:
         racer: Racer = None,
     ) -> None:
         self.rank = rank
+        self.race_id = race_id
         self.bib = bib
         self.time = time
         self.difference = difference

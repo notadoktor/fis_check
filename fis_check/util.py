@@ -4,10 +4,12 @@ import logging
 import pickle
 from base64 import b64encode
 from pathlib import Path
-from typing import Any, Dict, List, Literal, NamedTuple, Optional
+from types import FunctionType
+from typing import Any, Dict, List, Literal, NamedTuple, Optional, Set
 from urllib.parse import urlparse
 
 import pytz
+from bs4.element import PageElement
 
 from .enums import Category, EventType, Gender, RunStatus, Status
 
@@ -24,6 +26,16 @@ class RaceFilter(NamedTuple):
     gender: Optional[Gender] = None
     live_url: Optional[bool] = None
     status: Optional[Status] = Status.ResultsAvailable
+
+    def __repr__(self) -> str:
+        values = {k: v for k, v in self._asdict().items() if v is not None}
+        if not bool(values.get("event_types")):
+            del values["event_types"]
+        if len(values):
+            val_str = " ".join(sorted([f"{k}={v}" for k, v in values.items()]))
+        else:
+            val_str = "empty"
+        return f"<RaceFilter {val_str}>"
 
 
 class RaceRun(NamedTuple):
@@ -126,6 +138,9 @@ class Cache:
                 # RecursionError happens on bs4 objects, ensure scraped values are converted appropriately
                 logging.error(f"bad cache write to {self.path}: check val for problems")
                 breakpoint()
+                bad_vals = debug_pickle(val)
+                print(f"found {len(bad_vals)} possibilities:")
+                print("\n".join(bad_vals))
                 raise
 
 
@@ -138,3 +153,33 @@ def merge_status(status_list: List[str]) -> Status:
             continue
         s |= new_stat
     return s
+
+
+NO_PICKLE = (PageElement,)
+
+
+def debug_pickle(obj, level: int = 0) -> Set[str]:
+    results = set()
+    for aname in dir(obj):
+        aval = getattr(obj, aname)
+        atype = type(aval)
+        fail_msg = f"bad attr: {type(obj)}.{aname} is {atype}"
+
+        if aval.__class__ in NO_PICKLE:
+            # known problem types
+            results.add(fail_msg)
+            continue
+
+        if aname.startswith("__") or isinstance(aval, FunctionType):
+            # attrs ignored when pickling parent object
+            continue
+
+        try:
+            _ = pickle(aval)
+        except RecursionError:
+            # recurse!
+            # if aval
+            a_results = debug_pickle(aval, level + 1)
+            results.add(a_results)
+
+    return results

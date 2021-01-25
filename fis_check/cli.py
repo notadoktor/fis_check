@@ -75,11 +75,12 @@ def pos_int(ctx, param, val: int):
     type=int,
     callback=pos_int,
     default=7,
-    help="show events for days leading up to --max-date",
+    help="show events for days leading up to and including --max-date",
     show_default=True,
 )
 @click.option("--skip-cache", is_flag=True, help="Fetch new data from the fis website")
-@click.option("--debug", "-D", is_flag=True, help="set log level to debug")
+@click.option("--verbose", "-v", "log_level", flag_value=logging.INFO, help="set log level to info")
+@click.option("--debug", "-D", "log_level", flag_value=logging.DEBUG, help="set log level to debug")
 @click.pass_context
 def main(
     ctx: click.Context,
@@ -94,10 +95,10 @@ def main(
     max_date: datetime.date,
     num_days: int,
     skip_cache: bool,
-    debug: bool,
+    log_level: int,
 ):
-    if debug:
-        logging.getLogger("root").setLevel(logging.DEBUG)
+    if log_level:
+        logging.getLogger("root").setLevel(log_level)
         logging.debug(f"params: {json.dumps({k: repr(v) for k, v in ctx.params.items()})}")
     date_range = datetime.timedelta(days=num_days)
     if min_date is None:
@@ -111,25 +112,30 @@ def main(
 
     cal = scrape.Calendar()
     cal_events = cal.scan(skip_cache=skip_cache)
+    logging.debug(f"Got {len(cal_events)} events")
     for ev in cal_events:
-        if ev.dates[-1] < min_date:
+        if all([d < min_date for d in ev.dates]):
+            logging.debug(f"skipping {ev.id}, all dates < {min_date}")
             continue
-        elif ev.dates[0] > max_date:
-            continue
-        elif ev.dates[0] > datetime.date.today():
-            # nothing in the future will have results
+        elif all([d > max_date for d in ev.dates]):
+            logging.info(f"breaking at {ev.id}, all dates > {max_date}")
+            # max_date defaults to today, if overridden assume intentional
             break
-        elif ev.dates[0] > max_date:
-            continue
         elif ev.gender not in gender:
+            logging.debug(f"skipping {ev.id}, failed {ev.gender.name} in {gender.name}")
             continue
         elif event_filter and not any([e in event_filter for e in ev.event_types]):
+            ef_str = ", ".join(sorted([str(ef) for ef in event_filter]))
+            et_str = ", ".join(sorted([str(et) for et in ev.event_types]))
+            logging.debug(f"skipping {ev.id}, failed event filter ({et_str}) ^ ({ef_str})")
             continue
 
         rf = RaceFilter(status=Status.ResultsAvailable, event_types=event_filter)
         ev_races = ev.filter_races(f=rf)
         if ev_races:
             print(ev.place)
+            if ev.place == "Crans Montana":
+                breakpoint()
             for er in ev_races:
                 er_info = [str(er.date), str(er.gender), er.event_type.value]
                 if len(er.runs) and Status.Cancelled not in er.status:
@@ -152,3 +158,8 @@ def main(
                 ):
                     er.summarize(top=top, show_top=show_top)
             print()
+        else:
+            logging.info(f"no races in {ev} passed RaceFilter: {rf}\n")
+            # breakpoint()
+            # ev.filter_races(f=rf)
+            pass
