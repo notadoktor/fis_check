@@ -154,10 +154,22 @@ def main(
                 if summarize and all(
                     [r.status and r.status == RunStatus.OfficialResults for r in er.runs]
                 ):
-                    er.summarize(top=top, show_top=show_top)
+                    summarize_race(er, top=top, show_top=show_top)
             print()
         else:
             logging.info(f"no races in {ev} passed RaceFilter: {rf}\n")
             # breakpoint()
             # ev.filter_races(f=rf)
             pass
+
+
+def summarize_race(race: scrape.Race, top: int = 5, show_top: bool = False) -> None:
+    max_bin = 0
+    for r in race.results(top=top):
+        if show_top:
+            print(str(r))
+        if r.bin > max_bin:
+            max_bin = r.bin
+    print(f"DQ: {len(race.dq())} (DNF: {len(race.dnf())}, DNS: {len(race.dns())})")
+    print(f"Max bin: {max_bin}")
+    print()

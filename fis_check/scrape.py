@@ -4,10 +4,8 @@ import datetime
 import logging
 import re
 from collections import defaultdict
-from sys import path
 from typing import Any, Dict, List, Sequence, Tuple, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
-from pydantic.typing import new_type_supertype
 
 import requests
 from bs4 import BeautifulSoup
@@ -93,6 +91,13 @@ def visible_div(tag) -> bool:
             not tag.has_attr("class") or not any([re.match(hidden_class, c) for c in tag["class"]])
         )
     )
+
+
+def get_comp_id(url: str) -> str:
+    """ pulls the competitor ID out of the url from a race result row """
+    parts = urlparse(url)
+    qs = dict(parse_qsl(parts.query))
+    return qs["competitorid"]
 
 
 class Calendar:
@@ -382,13 +387,11 @@ class Event:
 
     @property
     def races(self) -> List["Race"]:
-        if not self._races:
-            self.load_races()
+        self.load_races()
         return self._races
 
     def filter_races(self, f: RaceFilter) -> List["Race"]:
-        if not self._races:
-            self._races = self._load_races(self.id, self.seasoncode, str(self.discipline))
+        self.load_races()
         return [r for r in self._races if r.filtered(f)]
 
     def update(self) -> "Event":
@@ -622,16 +625,57 @@ class Race:
                 rr = RaceResult(**rr_attrs)
                 all_results.append(rr)
 
+            dq_ranks = {"DNF": 990, "DNS": 999}
+            disqualified = dict(
+                zip(
+                    ["DNF", "DNS"],
+                    [
+                        d.div
+                        for d in result_table.parent.next_siblings
+                        if d.name == "div" and "table__body" in d["class"]
+                    ],
+                )
+            )
+            for dq_type in disqualified:
+                dq_list = [
+                    a.div.div
+                    for a in disqualified[dq_type].children
+                    if a.name == "a" and "table-row" in a["class"]
+                ]
+                for row in dq_list:
+                    bib, fis_code, name, birth_year, nation = [
+                        list(d.stripped_strings)[0]
+                        for d in row.children
+                        if d.name == "div" and list(d.stripped_strings)
+                    ]
+                    rr_attrs: Dict[str, Any] = {
+                        "race_id": self.id,
+                        "rank": dq_ranks[dq_type],
+                        "time": dq_type,
+                        "difference": "",
+                    }
+                    rr_attrs["bib"] = int(bib)
+                    rr_attrs["fis_code"] = fis_code
+                    rr_attrs["name"] = name
+                    rr_attrs["birth_year"] = int(birth_year)
+                    rr_attrs["nation"] = nation
+                    # rr_attrs["racer_id"] = get_comp_id(row.parent.parent["href"])
+                    rr = RaceResult(**rr_attrs)
+                    all_results.append(rr)
+
             self._results = all_results
 
-    def summarize(self, top: int = 5, show_top: bool = False) -> None:
-        max_bin = 0
-        for r in self.results(top=top):
-            if show_top:
-                print(str(r))
-            if r.bin > max_bin:
-                max_bin = r.bin
-        print(f"Max bin: {max_bin}")
+    def dq(self, skip_cache: bool = False) -> List["RaceResult"]:
+        self.load_results(skip_cache)
+        return [r for r in self._results if r.rank > 900]
+
+    def dnf(self, skip_cache: bool = False) -> List["RaceResult"]:
+        self.load_results(skip_cache)
+        return [r for r in self._results if r.rank == 990]
+
+    def dns(self, skip_cache: bool = False) -> List["RaceResult"]:
+        self.load_results(skip_cache)
+        return [r for r in self._results if r.rank == 999]
 
 
 class Racer:
