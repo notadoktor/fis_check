@@ -59,7 +59,7 @@ def pos_int(ctx, param, val: int):
 )
 @click.option("--summarize/--no-summarize", default=True, help="show race summary")
 @click.option(
-    "--top", type=int, default=5, callback=pos_int, help="summarize race by the top X finishers"
+    "--top", type=int, default=3, callback=pos_int, help="summarize race by the top X finishers"
 )
 @click.option("--show-top", is_flag=True, help="show the top finishers in the summary")
 @click.option("--min-date", callback=str2date, help="show events on or after this date")
@@ -134,8 +134,6 @@ def main(
         ev_races = ev.filter_races(f=rf)
         if ev_races:
             print(ev.place)
-            if ev.place == "Crans Montana":
-                breakpoint()
             for er in ev_races:
                 er_info = [str(er.date), str(er.gender), er.event_type.value]
                 if len(er.runs) and Status.Cancelled not in er.status:
