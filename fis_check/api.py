@@ -1,4 +1,6 @@
-from fis_check.enums import Discipline
+from copy import deepcopy
+
+from fis_check.enums import SectorCode
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -25,31 +27,32 @@ async def root():
 @app.get("/calendar")
 async def get_cal():
     # fetch calendar
-    pass
+    return []
 
 
-@app.get("/event/{eventid}", response_model=schemas.Event)
+@app.get("/event/{event_id}", response_model=schemas.EventLinked)
 async def get_cal_event(
-    eventid: int, seasoncode: int = 2021, sectorcode: str = "AL", db: Session = Depends(get_db)
+    event_id: int, season_code: int = 2021, sector_code: str = "AL", db: Session = Depends(get_db)
 ):
-    db_event = crud.get_event(db, eventid)
-    scraped_event = None
-    if db_event is None:
-        event = scrape.Event.load(
-            event_id=str(eventid), season_code=str(seasoncode), sector_code=Discipline[sectorcode]
-        )
-        db_event = crud.create_event(db, schemas.EventBase(**event.__dict__))
+    db_event = crud.get_event(db, event_id)
 
-    if not db_event.races:
-        if not scraped_event:
-            scraped_event = scrape.Event.load(
-                str(db_event.id), str(db_event.seasoncode), db_event.discipline, True  # type: ignore
-            )
+    if db_event is None or not db_event.races:
+        scraped_event = scrape.Event(
+            id=str(event_id), season_code=str(season_code), sector_code=SectorCode[sector_code]
+        )
+
+        if db_event is None:
+            db_event = crud.create_event(db, schemas.EventBase(**scraped_event.__dict__))
+
         for r in scraped_event.races:
-            rdict = r.__dict__.copy()
-            rdict["event_id"] = str(eventid)
-            breakpoint()
+            rdict = deepcopy(r.__dict__)
+            rdict["event_id"] = event_id
             crud.create_race(db, schemas.RaceBase(**rdict))
+            if r.runs:
+                for run_obj in r.runs:
+                    run_dict = deepcopy(run_obj.__dict__)
+                    run_dict["race_id"] = rdict["id"]
+                    crud.create_run(db, schemas.RunBase(**run_dict))
         db.refresh(db_event)
     return db_event
 

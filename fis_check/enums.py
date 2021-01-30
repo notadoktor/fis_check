@@ -142,7 +142,7 @@ class Country(str, Enum):
         return self.name
 
 
-class Discipline(str, Enum):
+class SectorCode(str, Enum):
     AL = "Alpine Skiing"
     CC = "Cross-Country"
     FS = "Freestyle"
@@ -210,6 +210,7 @@ class NiceFlag(IntFlag):
 
 
 class Gender(NiceFlag):
+    NA = 0
     M = auto()
     W = auto()
     All = M | W

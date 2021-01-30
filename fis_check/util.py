@@ -38,15 +38,6 @@ class RaceFilter(NamedTuple):
         return f"<RaceFilter {val_str}>"
 
 
-class RaceRun(NamedTuple):
-    run: int
-    race_id: str
-    cet: Optional[datetime.time]
-    loc: Optional[datetime.time]
-    status: Optional[RunStatus]
-    info: Optional[str] = None
-
-
 class Cache:
     root_dir: Path
     key: str

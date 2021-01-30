@@ -1,10 +1,12 @@
 from sqlalchemy import Column, Date, DateTime, Enum, Float, Integer, String, Time, MetaData
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.declarative.api import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.sql.schema import ForeignKey
+from sqlalchemy.sql.schema import ForeignKey, UniqueConstraint
+from sqlalchemy.sql.sqltypes import Boolean
 
-from .enums import Category, Country, Discipline, EventType, Gender, RunStatus, Status
+from .enums import Category, Country, SectorCode, EventType, Gender, RunStatus, Status
 
 md: MetaData = MetaData()
 Base = declarative_base()
@@ -16,11 +18,19 @@ class Event(Base):
     id = Column(Integer, primary_key=True, index=True)
     place = Column(String, nullable=False)
     country = Column(Enum(Country), nullable=False)
-    gender = Column(Enum(Gender), nullable=False)
-    seasoncode = Column(Integer, nullable=False)
-    discipline = Column(Enum(Discipline), nullable=False)
-    status = Column(Enum(Status))
+    season_code = Column(Integer, nullable=False)
+    sector_code = Column(Enum(SectorCode), nullable=False)
+    _status = Column("status", Integer, default=0)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    @hybrid_property
+    def status(self):
+        # breakpoint()
+        return self._status
+
+    @status.setter
+    def status(self, status: Status):
+        self._status = status.value
 
     races = relationship("Race", back_populates="event")
 
@@ -47,7 +57,7 @@ class Race(Base):
 class Run(Base):
     __tablename__ = "runs"
     race_id = Column(Integer, ForeignKey("races.id"), primary_key=True)
-    run = Column(Integer, unique=True, nullable=False, primary_key=True)
+    run = Column(Integer, nullable=False, primary_key=True)
     cet = Column(Time)
     loc = Column(Time)
     status = Column(Enum(RunStatus))
@@ -55,6 +65,7 @@ class Run(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     race = relationship("Race", back_populates="runs")
+    UniqueConstraint(race_id, run)
 
 
 class Racer(Base):
@@ -77,14 +88,16 @@ class Racer(Base):
 class Result(Base):
     __tablename__ = "results"
 
-    race_id = Column(Integer, ForeignKey("races.id"), primary_key=True)
-    racer_id = Column(Integer, ForeignKey("racers.id"), primary_key=True)
+    race_id = Column(Integer, ForeignKey("races.id"), primary_key=True, index=True)
+    racer_id = Column(Integer, ForeignKey("racers.id"), primary_key=True, index=True)
     bib = Column(Integer, nullable=False)
     rank = Column(Integer)
     time = Column(Integer)  # milliseconds
     difference = Column(Integer)  # milliseconds
     fis_points = Column(Float)
     cup_points = Column(Integer)
+    dnf = Column(Boolean, default=False)
+    dns = Column(Boolean, default=False)
 
     race = relationship("Race", back_populates="result")
     racer = relationship("Racer", back_populates="results")

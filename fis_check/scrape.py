@@ -4,29 +4,34 @@ import datetime
 import logging
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
-from .enums import Category, Country, Discipline, EventType, Gender, RunStatus, Status
-from .util import Cache, RaceFilter, RaceRun, merge_status, tz_cet, tz_local
+from .enums import Category, Country, SectorCode, EventType, Gender, RunStatus, Status
+from .util import Cache, RaceFilter, merge_status, tz_cet, tz_local
 
 
 hidden_class = r"hidden-[^-\s]+?-up"
 
+TODAY = datetime.date.today()
+DEFAULT_SEASON = str(TODAY.year) if TODAY.month < 9 else str(TODAY.year - 1)
+DEFAULT_SECTORCODE = SectorCode.AL
+DEFAULT_CATEGORY = Category.WC
+
 
 class EventNotFound(Exception):
     def __init__(
-        self, eventid: str, seasoncode: str, sectorcode: Discipline, msg: str = None
+        self, event_id: str, season_code: str, sector_code: SectorCode, msg: str = None
     ) -> None:
         if msg is None:
-            msg = f"Unable to find an event matching eventid={eventid} seasoncode={seasoncode} sectorcode={sectorcode}"
+            msg = f"Unable to find an event matching event_id={event_id} season_code={season_code} sector_code={sector_code}"
         super().__init__(msg)
-        self.eventid = eventid
-        self.seasoncode = seasoncode
-        self.sectorcode = sectorcode
+        self.event_id = event_id
+        self.season_code = season_code
+        self.sector_code = sector_code
 
 
 class RaceNotFound(Exception):
@@ -41,6 +46,7 @@ class RacerNotFound(Exception):
     pass
 
 
+# TODO: replace with mixin for scrape objects that handles caching / fetching with self values
 def get_body(
     url: str, params: Dict[str, Any] = {}, cache: Cache = None, skip_cache: bool = False
 ) -> BeautifulSoup:
@@ -105,12 +111,13 @@ class Calendar:
 
     def __init__(
         self,
-        seasoncode: str = "2021",
-        disciplinecode: Discipline = Discipline.AL,
-        categorycode: Category = Category.WC,
+        season_code: str = DEFAULT_SEASON,
+        sector_code: SectorCode = DEFAULT_SECTORCODE,
+        categorycode: Category = DEFAULT_CATEGORY,
+        autoload: bool = True,
     ) -> None:
-        self.seasoncode = seasoncode
-        self.disciplinecode = disciplinecode
+        self.season_code = season_code
+        self.sector_code = sector_code
         self.categorycode = categorycode
         self.cache = Cache("calendar")
         self.form_cache = Cache(
@@ -120,6 +127,9 @@ class Calendar:
         self._events: List["Event"] = []
         self._options: Dict[str, Any] = {}
 
+        if autoload:
+            self.scan()
+
     @property
     def options(self):
         if not self._options:
@@ -128,8 +138,8 @@ class Calendar:
 
     def _build_query(self, **opts) -> Dict[str, str]:
         cal_qs = {
-            "sector_code": self.disciplinecode,
-            "seasoncode": self.seasoncode,
+            "sector_code": self.sector_code,
+            "seasoncode": self.season_code,
             "categorycode": self.categorycode,
         }
         for q in self.options:
@@ -211,6 +221,11 @@ class Calendar:
             date_list.append(datetime.datetime.strptime(f"{dom} {month} {year}", "%d %b %Y").date())
         return date_list
 
+    def get_event(self, event_id: str) -> Optional["Event"]:
+        for e in self._events:
+            if e.id == event_id:
+                return e
+
     def scan(self, skip_cache: bool = False, **kwargs) -> List["Event"]:
         cal_qs = self._build_query(**kwargs)
         self.event_cache.params = cal_qs.copy()
@@ -237,7 +252,7 @@ class Calendar:
                 row_data = cal_row.find("div", attrs={"class": "g-row"})
                 event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
                 event_data = {"id": cal_row["id"]}
-                logging.debug(f"processing eventid {event_data['id']}")
+                logging.debug(f"processing event_id {event_data['id']}")
                 event_data["status"] = merge_status(
                     [s["title"] for s in event_raw["Status"].find_all("span")]
                 )
@@ -256,8 +271,8 @@ class Calendar:
                 ]
                 logging.debug(f"country: {event_data['country']}")
 
-                event_data["discipline"] = Discipline[event_raw["Disc."].string]
-                logging.debug(f"discipline: {event_data['discipline']}")
+                event_data["sector_code"] = SectorCode[event_raw["Disc."].string]
+                logging.debug(f"sector_code: {event_data['sector_code']}")
                 cats, evs = [
                     d.div.string
                     for d in event_raw["Category & Event"].div.contents
@@ -283,8 +298,7 @@ class Calendar:
 
                 event_data["gender"] = Gender[event_raw["Gender"].div.div.div.string]
                 logging.debug(f"gender: {event_data['gender']}")
-                new_event = Event(**event_data)
-                new_event.races
+                new_event = Event(from_calendar=True, skip_cache=skip_cache, **event_data)
                 events.append(new_event)
             self._events = events
             self.event_cache.write(self._events)
@@ -309,81 +323,82 @@ class Calendar:
 
 class Event:
     url: str = "https://www.fis-ski.com/DB/general/event-details.html"
+    id: str
+    dates: List[datetime.date]
+    place: str
+    country: Country
+    categories: Sequence[Category]
+    event_types: Sequence[EventType]
+    gender: Gender
+    season_code: str
+    sector_code: SectorCode
+    status: Status
 
     def __init__(
         self,
         id: str,
-        dates: List[datetime.date],
-        place: str,
-        country: Country,
-        categories: Sequence[Category],
-        event_types: Sequence[EventType],
-        gender: Gender,
-        seasoncode: str = "2021",
-        discipline: Discipline = Discipline.AL,
-        status=Status(0),
+        season_code: str = DEFAULT_SEASON,
+        sector_code: SectorCode = DEFAULT_SECTORCODE,
+        skip_cache: bool = False,
+        from_calendar: bool = False,
+        **kwargs,
+        # dates: List[datetime.date] = None,
+        # place: str = None,
+        # country: Country = None,
+        # categories: Sequence[Category] = None,
+        # event_types: Sequence[EventType] = None,
+        # gender: Gender = None,
+        # season_code: str = DEFAULT_SEASON,
+        # sector_code: SectorCode = SectorCode.AL,
+        # status: Status = Status(0),
     ) -> None:
         self.id = id
-        self.dates = dates
-        self.place = place
-        self.country = country
-        self.categories = categories
-        self.event_types = event_types
-        self.gender = gender
-        self.seasoncode = seasoncode
-        self.discipline = discipline
-        self.status = status
-        self._races: List["Race"] = list()
+        self.season_code = season_code
+        self.sector_code = sector_code
+        self._races = self._load_races(skip_cache)
 
-    @classmethod
-    def load(
-        cls, event_id: str, season_code: str, sector_code: Discipline, skip_cache: bool = False
-    ) -> "Event":
-        url_params = {
-            "eventid": event_id,
-            "seasoncode": season_code,
-            "sectorcode": str(sector_code),
-        }
-        event_params = {
-            "id": event_id,
-            "dates": [],
-            "place": None,
-            "country": None,
-            "categories": set(),
-            "event_types": set(),
-            "gender": None,
-            "seasoncode": season_code,
-            "discipline": sector_code,
-        }
+        if from_calendar:
+            # if any fields are missing, exception should throw
+            self.dates = sorted(set(kwargs["dates"]))
+            self.place = kwargs["place"]
+            self.country = kwargs["country"]
+            self.categories = sorted(set(kwargs["categories"]))
+            self.event_types = sorted(set(kwargs["event_types"]))
+            self.gender = kwargs["gender"]
+            self.status = kwargs["status"]
+        else:
+            # fetch and load details from the event page
+            url_params = {
+                "eventid": self.id,
+                "seasoncode": self.season_code,
+                "sectorcode": str(self.sector_code),
+            }
+            event_body = get_body(self.url, url_params, skip_cache=skip_cache)
+            self.place = event_body.find("h1", attrs={"class": "event-header__name"}).string.strip()
+            country = re.search(r"\(([A-Z]{3})\)$", self.place)
+            if country:
+                self.country = Country[country.group(1)]
 
-        # parse some easy text out of event page
-        event_body = get_body(cls.url, url_params, skip_cache=skip_cache)
-        event_params["place"] = event_body.find(
-            "h1", attrs={"class": "event-header__name"}
-        ).string.strip()
-        country = re.search(r"\(([A-Z]{3})\)$", event_params["place"])
-        if country:
-            event_params["country"] = Country[country.group(1)]
+            # the rest is contained in the race objects
+            if len(self._races) == 0:
+                raise EventNotFound(self.id, self.season_code, self.sector_code)
 
-        # the rest is contained in the race objects
-        races = cls._load_races(skip_cache=skip_cache, **url_params)
-        if len(races) == 0:
-            raise EventNotFound(event_id, season_code, sector_code)
+            event_genders = set()
+            event_dates = set()
+            event_cats = set()
+            event_ets = set()
+            self.status = Status(0)
+            for r in self._races:
+                event_genders.add(r.gender)
+                event_dates.add(r.date)
+                event_cats.add(r.category)
+                event_ets.add(r.event_type)
+                self.status |= r.status
 
-        race_genders = set()
-        for r in races:
-            race_genders.add(r.gender)
-            event_params["dates"].append(r.date)
-            event_params["categories"].add(r.category)
-            event_params["event_types"].add(r.event_type)
-        event_params["gender"] = race_genders.pop() if len(race_genders) == 1 else Gender(3)
-
-        new_event = cls(**event_params)
-        new_event._races = races
-        return new_event
-
-    def __repr__(self) -> str:
-        return f"<Event id={self.id} place=\"{self.place}\" gender={self.gender.name} events={','.join([e.name for e in self.event_types])} start={self.dates[0]}>"
+            self.gender = event_genders.pop() if len(event_genders) == 1 else Gender.All
+            self.dates = sorted(event_dates)
+            self.categories = sorted(event_cats)
+            self.event_types = sorted(event_ets)
 
     @property
     def races(self) -> List["Race"]:
@@ -394,27 +409,22 @@ class Event:
         self.load_races()
         return [r for r in self._races if r.filtered(f)]
 
-    def update(self) -> "Event":
-        """ returns a new, possibly updated Event object """
-        return self.load(self.id, self.seasoncode, self.discipline, True)
+    # def update(self) -> "Event":
+    #     """ returns a new, possibly updated Event object """
+    #     return self.__class__(self.id, self.season_code, self.sector_code, True)
 
     def load_races(self, skip_cache: bool = False):
         if not self._races or skip_cache:
-            self._races = self._load_races(
-                self.id, self.seasoncode, str(self.discipline), skip_cache
-            )
+            self._races = self._load_races(skip_cache)
 
-    @classmethod
-    def _load_races(
-        cls, eventid: str, seasoncode: str, sectorcode: str, skip_cache: bool = False
-    ) -> List["Race"]:
+    def _load_races(self, skip_cache: bool = False) -> List["Race"]:
         event_qs = {
-            "sectorcode": sectorcode,
-            "seasoncode": seasoncode,
-            "eventid": eventid,
+            "sectorcode": str(self.sector_code),
+            "seasoncode": self.season_code,
+            "eventid": self.id,
         }
 
-        event_page = get_body(cls.url, event_qs, skip_cache=skip_cache)
+        event_page = get_body(self.url, event_qs, skip_cache=skip_cache)
         race_table = event_page.find("div", attrs={"class": "table_pb"})
         header_obj, subheader_obj = [
             d.div.div for d in race_table.find_all("div", attrs={"class": "thead"})
@@ -435,15 +445,18 @@ class Event:
                 zip(header, [tag for tag in day_obj.children if visible_a(tag) or visible_div(tag)])
             )
 
-            race_args: Dict[str, Any] = {}
+            race_args: Dict[str, Any] = {
+                "sector_code": self.sector_code,
+                "event_id": self.id,
+            }
+
             race_args["id"] = dict(parse_qsl(urlparse(day_obj.a["href"]).query))["raceid"]
-            race_args["event_id"] = eventid
             race_args["status"] = merge_status(
                 [s["title"] for s in race_raw["Status"].find_all("span")]
             )
             race_args["date"] = (
                 datetime.datetime.strptime(race_raw["Date"].div.div.div.string, "%d %b")
-                .replace(year=int(event_qs["seasoncode"]))
+                .replace(year=int(self.season_code))
                 .date()
             )
             if race_args["date"].month > 7:
@@ -509,8 +522,6 @@ class Event:
 
 
 class Race:
-    url: str = "https://www.fis-ski.com/DB/general/results.html"
-
     def __init__(
         self,
         id: str,
@@ -521,9 +532,10 @@ class Race:
         event_type: EventType,
         gender: Gender,
         status: Status,
-        runs: List[RaceRun],
+        runs: List["RaceRun"],
         comments: str = None,
         live_url: str = None,
+        sector_code: SectorCode = DEFAULT_SECTORCODE,
     ) -> None:
         self.id = id
         self.category = category
@@ -536,6 +548,7 @@ class Race:
         self.comments = comments
         self.live_url = live_url
         self.runs = runs
+        self.sector_code = sector_code
         self._results: List["RaceResult"] = []
 
     def __repr__(self) -> str:
@@ -586,8 +599,8 @@ class Race:
 
     def load_results(self, skip_cache: bool = False):
         if not self._results or skip_cache:
-            qs = {"raceid": self.id, "sectorcode": "AL"}
-            result_body = get_body(Race.url, qs)
+            qs = {"raceid": self.id, "sectorcode": str(self.sector_code)}
+            result_body = get_body(RaceResult.url, qs)
 
             result_table = result_body.find("div", id="events-info-results").div
             result_rows = [a for a in result_table.children if a.name == "a"]
@@ -678,6 +691,31 @@ class Race:
         return [r for r in self._results if r.rank == 999]
 
 
+class RaceRun:
+    run: int
+    race_id: str
+    cet: Optional[datetime.time]
+    loc: Optional[datetime.time]
+    status: Optional[RunStatus]
+    info: Optional[str]
+
+    def __init__(
+        self,
+        run: int,
+        race_id: str,
+        cet: datetime.time = None,
+        loc: datetime.time = None,
+        status: RunStatus = None,
+        info: str = None,
+    ) -> None:
+        self.run = run
+        self.race_id = race_id
+        self.cet = cet
+        self.loc = loc
+        self.status = status
+        self.info = info
+
+
 class Racer:
     birth_year: int
     fis_code: str
@@ -699,6 +737,8 @@ class Racer:
 
 
 class RaceResult:
+    url: str = "https://www.fis-ski.com/DB/general/results.html"
+
     def __init__(
         self,
         race_id: str,

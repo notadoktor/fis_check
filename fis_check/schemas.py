@@ -2,23 +2,29 @@ from pydantic import BaseModel, Field, PositiveInt
 from typing import Optional, List
 import datetime
 
-from .enums import Category, Country, Discipline, EventType, Gender, RunStatus, Status
+from sqlalchemy.orm.interfaces import PropComparator
 
+from .enums import Category, Country, SectorCode, EventType, Gender, RunStatus, Status
 
+# TODO: fix meta status in model / schema
 class EventBase(BaseModel):
     id: int
+    status: Status
     place: str
     country: Country
-    gender: Gender
-    seasoncode: int
-    discipline: Discipline
+    season_code: int
+    sector_code: SectorCode
 
 
 class Event(EventBase):
-    races: List["Race"]
+    updated_at: datetime.date
 
     class Config:
         orm_mode = True
+
+
+class EventLinked(Event):
+    races: List["Race"]
 
 
 class RaceBase(BaseModel):
@@ -29,34 +35,40 @@ class RaceBase(BaseModel):
     date: datetime.date
     event_type: EventType
     gender: Gender
+    status: Status
 
 
 class Race(RaceBase):
-    status: Status
     comments: Optional[str]
     live_url: Optional[str]
 
-    # runs: List["Run"]
-    # results: List["Result"]
-
     class Config:
         orm_mode = True
+
+
+class RaceLinked(Race):
+    runs: List["Run"]
+    results: List["Result"]
 
 
 class RunBase(BaseModel):
     race_id: int
     run: PositiveInt
-
-
-class Run(RunBase):
     status: Optional[RunStatus]
     cet: Optional[datetime.time]
     loc: Optional[datetime.time]
     info: Optional[str]
-    parent: Race
+
+
+class Run(RunBase):
+    updated_at: datetime.datetime
 
     class Config:
         orm_mode = True
+
+
+class RunLinked(Run):
+    race: Race
 
 
 class ResultBase(BaseModel):
@@ -66,17 +78,19 @@ class ResultBase(BaseModel):
 
 class Result(ResultBase):
     racer_id: int
-    rank: Optional[int]
-    time: Optional[int]
-    difference: Optional[int]
+    rank: Optional[str]
+    time: Optional[str]
+    difference: Optional[str]
     fis_points: Optional[float]
     cup_points: Optional[int]
 
-    parent: Race
-    racer: "Racer"
-
     class Config:
         orm_mode = True
+
+
+class ResultLinked(Result):
+    race: Race
+    racer: "Racer"
 
 
 class RacerBase(BaseModel):
@@ -92,7 +106,6 @@ class Racer(RacerBase):
     skis: Optional[str]
     boots: Optional[str]
     poles: Optional[str]
-    results: List[Result]
 
     class Config:
         orm_mode = True
@@ -101,7 +114,11 @@ class Racer(RacerBase):
 ###
 
 Event.update_forward_refs()
+EventLinked.update_forward_refs()
 Race.update_forward_refs()
+RaceLinked.update_forward_refs()
 Run.update_forward_refs()
+RunLinked.update_forward_refs()
 Result.update_forward_refs()
+ResultLinked.update_forward_refs()
 Racer.update_forward_refs()

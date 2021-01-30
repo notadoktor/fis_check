@@ -1,6 +1,8 @@
 .EXPORT_ALL_VARIABLES:
 PIPENV_VENV_IN_PROJECT = 1
 
+DOCKER_DB ?= psqlol
+
 pipenv: ## setus up a venv based on the Pipfile
 	pipenv install --dev
 
@@ -26,8 +28,12 @@ start: ## starts uvicorn in the foreground
 .PHONY: reset_db
 reset_db:
 	-docker rm -f psqlol
-	docker run -d --name psqlol -p 5432:5432 --env-file .env.db postgres:12
+	docker run -d --name $(DOCKER_DB) -p 5432:5432 --env-file .env.db postgres:12
 	# alembic upgrade head
+
+.PHONY: psql
+psql:
+	docker exec -it $(DOCKER_DB) bash -ilc 'psql -U $$POSTGRES_USER -d $$POSTGRES_DB'
 
 
 .PHONY: help
