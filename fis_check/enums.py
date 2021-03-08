@@ -63,7 +63,8 @@ class Country(str, Enum):
     BTN = "Bhutan"
     BIH = "Bosnia and Herzegovina"
     BRA = "Brazil"
-    BGR = "Bulgaria"
+    BUL = "Bulgaria"
+    BGR = BUL
     BFA = "Burkina Faso"
     BDI = "Burundi"
     CAN = "Canada"
@@ -77,7 +78,8 @@ class Country(str, Enum):
     FIN = "Finland"
     FRA = "France"
     GEO = "Georgia"
-    DEU = "Germany"
+    GER = "Germany"
+    DEU = GER
     GRC = "Greece"
     HKG = "Hong Kong"
     ISL = "Iceland"
@@ -123,8 +125,8 @@ class Country(str, Enum):
     SRB = "Serbia"
     SGP = "Singapore"
     SVK = "Slovakia"
-    SVN = "Slovenia"
-    SLO = SVN
+    SLO = "Slovenia"
+    SVN = SLO
     ZAF = "South Africa"
     ESP = "Spain"
     SWE = "Sweden"
