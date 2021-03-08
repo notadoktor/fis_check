@@ -6,6 +6,7 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from urllib.parse import parse_qsl, urlencode, urlparse
+from bs4.element import PageElement, Tag
 
 import requests
 from bs4 import BeautifulSoup
@@ -210,15 +211,54 @@ class Calendar:
         else:
             self._options = self.form_cache.load()
 
-    def parse_date(self, date_str: str) -> List[datetime.date]:
-        days, month, year = date_str.split()
-        if "-" in days:
-            min_day, max_day = [int(d) for d in days.split("-")]
+    def parse_date(self, date_tag: Tag) -> List[datetime.date]:
+        if date_tag.string is None:
+            # end/beginning of month
+            try:
+                assert len(list(date_tag.stripped_strings)) == 2, f"Unexpected values in date tag"
+                min_str, max_str = [d.replace("-", "") for d in date_tag.stripped_strings]
+                logging.debug(f"Split month: {min_str}-{max_str}")
+                max_date = datetime.datetime.strptime(max_str, "%d %b %Y").date()
+                min_day, min_month = min_str.split()
+                min_year = (
+                    max_date.year - 1 if min_month == 12 and max_date.month == 1 else max_date.year
+                )
+                min_date = datetime.datetime.strptime(
+                    f"{min_day} {min_month} {min_year}", "%d %b %Y"
+                ).date()
+                assert min_date < max_date, f"min_date is after max_date, check parser"
+            except AssertionError as e:
+                logging.error(str(e))
+                breakpoint()
+                raise e
         else:
-            min_day = max_day = int(days)
+            # one or multiple days in the same month
+            date_str = date_tag.string
+            logging.debug(f"Same month: {date_str}")
+            days, month, year = date_str.split()
+            if "-" in days:
+                min_day, max_day = days.split("-")
+                min_date = datetime.datetime.strptime(
+                    f"{min_day} {month} {year}", "%d %b %Y"
+                ).date()
+                max_date = datetime.datetime.strptime(
+                    f"{max_day} {month} {year}", "%d %b %Y"
+                ).date()
+            else:
+                min_date = max_date = datetime.datetime.strptime(
+                    f"{days} {month} {year}", "%d %b %Y"
+                ).date()
+
         date_list = []
-        for dom in range(min_day, max_day + 1):
-            date_list.append(datetime.datetime.strptime(f"{dom} {month} {year}", "%d %b %Y").date())
+        logging.debug(f"filling range {min_date} - {max_date}")
+        curr_dt = min_date
+        while curr_dt <= max_date:
+            date_list.append(curr_dt)
+            if len(date_list) >= 2 and date_list[-2] == date_list[-1]:
+                print("infinite loop bitch")
+                breakpoint()
+                pass
+            curr_dt += datetime.timedelta(days=1)
         return date_list
 
     def get_event(self, event_id: str) -> Optional["Event"]:
@@ -258,7 +298,7 @@ class Calendar:
                 )
                 logging.debug(f"status: {event_data['status']}")
 
-                event_data["dates"] = self.parse_date(event_raw["Date"].string)
+                event_data["dates"] = self.parse_date(event_raw["Date"])
                 logging.debug(f"dates: {', '.join([str(dt) for dt in event_data['dates']])}")
                 if event_data["dates"][0] > datetime.date.today():
                     logging.debug(f"start date is in the future, ending scan")
