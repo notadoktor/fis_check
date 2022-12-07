@@ -4,27 +4,25 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-bs4 = "*"
-requests = "*"
-lxml = "*"
-sqlalchemy = "*"
-fastapi = {extras = ["all"], version = "*"}
-psycopg2 = "*"
-pytz = "*"
 alembic = "*"
-pipenv-setup = "*"
+bs4 = "*"
+fastapi = {extras = ["all"], version = "*"}
+lxml = "*"
+psycopg2-binary = "*"
+pytz = "*"
+requests = "*"
+sqlalchemy = "*"
 
 [dev-packages]
-pdbpp = "*"
-ipython = "*"
 black = "*"
 flake8 = "*"
+ipython = "*"
+jedi = "*"
 mypy = "*"
-jedi = "==0.17.2"
+pdbpp = "*"
 sqlalchemy-stubs = "*"
+pipenv-setup = "*"
+vistir = "==0.6.1"
 
 [requires]
-python_version = "3.9"
-
-[pipenv]
-allow_prereleases = true
+python_version = "3.11"
