@@ -25,7 +25,7 @@ class RaceFilter(NamedTuple):
     max_date: Optional[datetime.date] = None
     gender: Optional[Gender] = None
     live_url: Optional[bool] = None
-    status: Optional[Status] = Status.ResultsAvailable
+    status: Optional[Status] = Status.RESULTS_AVAILABLE
 
     def __repr__(self) -> str:
         values = {k: v for k, v in self._asdict().items() if v is not None}
@@ -47,11 +47,11 @@ class Cache:
 
     def __init__(
         self,
-        key: str = None,
-        url: str = None,
+        key: Optional[str] = None,
+        url: Optional[str] = None,
         root_dir: Path = cache_dir,
         expire_after: datetime.timedelta = datetime.timedelta(days=1),
-        params: Dict[str, str] = None,
+        params: Optional[Dict[str, str]] = None,
         ctype: Literal["pickle", "json"] = "pickle",
     ) -> None:
         if key:
@@ -88,7 +88,8 @@ class Cache:
     def filename(self) -> str:
         if self.params:
             id_str = b64encode(
-                "&".join([f"{k}={v}" for k, v in self.params.items()]).encode("utf-8"), b"_-",
+                "&".join([f"{k}={v}" for k, v in self.params.items()]).encode("utf-8"),
+                b"_-",
             ).decode("utf-8")
             return f"{self.key}_{id_str}"
         return self.key
@@ -122,6 +123,9 @@ class Cache:
         else:
             raise ValueError(f"Invalid format: {self.ctype}")
 
+        if not self.path.parent.exists():
+            self.path.parent.mkdir(parents=True)
+
         with self.path.open(mode) as fh:
             try:
                 fh.write(fmt(val))
@@ -139,7 +143,7 @@ def merge_status(status_list: List[str]) -> Status:
     s = Status(0)
     for s_str in status_list:
         try:
-            new_stat = Status[s_str.title().replace(" ", "")]
+            new_stat = Status[s_str.upper().replace(" ", "_")]
         except KeyError:
             continue
         s |= new_stat
@@ -166,7 +170,7 @@ def debug_pickle(obj, level: int = 0) -> Set[str]:
             continue
 
         try:
-            _ = pickle(aval)
+            _ = pickle.dumps(aval)
         except RecursionError:
             # recurse!
             # if aval

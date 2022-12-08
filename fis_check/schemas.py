@@ -1,10 +1,10 @@
-from pydantic import BaseModel, Field, PositiveInt
-from typing import Optional, List
 import datetime
+from typing import List, Optional
 
-from sqlalchemy.orm.interfaces import PropComparator
+from pydantic import BaseModel, Field, PositiveInt
 
-from .enums import Category, Country, SectorCode, EventType, Gender, RunStatus, Status
+from .enums import Category, Country, EventType, Gender, RunStatus, SectorCode, Status
+
 
 # TODO: fix meta status in model / schema
 class EventBase(BaseModel):

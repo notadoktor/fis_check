@@ -23,6 +23,9 @@ def str2event(ctx, param, val_list: str) -> List[EventType]:
 
 
 def str2gender(ctx, param, val: Union[str, Gender]) -> Gender:
+    if not val:
+        return Gender.ALL
+
     if isinstance(val, Gender):
         return val
 
@@ -55,7 +58,9 @@ def pos_int(ctx, param, val: int):
 @click.option("--speed", is_flag=True, help="show Super G and Downhill")
 @click.option("--tech", is_flag=True, help="show Slalom and GS")
 @click.option(
-    "--gender", callback=str2gender, default=Gender.All, help="show events for just M or F",
+    "--gender",
+    callback=str2gender,
+    help="show events for just M or F",
 )
 @click.option("--summarize/--no-summarize", default=True, help="show race summary")
 @click.option(
@@ -113,9 +118,10 @@ def main(
     cal = scrape.Calendar()
     cal_events = cal.scan(skip_cache=skip_cache)
     logging.debug(f"Got {len(cal_events)} events")
+    # breakpoint()
     for ev in cal_events:
         if all([d < min_date for d in ev.dates]):
-            logging.debug(f"skipping {ev.id}, all dates < {min_date}")
+            logging.debug(f"skipping {ev.id}, all dates < {min_date}: {[str(d) for d in ev.dates]}")
             continue
         elif all([d > max_date for d in ev.dates]):
             logging.info(f"breaking at {ev.id}, all dates > {max_date}")
@@ -130,13 +136,15 @@ def main(
             logging.debug(f"skipping {ev.id}, failed event filter ({et_str}) ^ ({ef_str})")
             continue
 
-        rf = RaceFilter(status=Status.ResultsAvailable, event_types=event_filter)
+        rf = RaceFilter(
+            status=Status.RESULTS_AVAILABLE | Status.PDF_AVAILABLE, event_types=event_filter
+        )
         ev_races = ev.filter_races(f=rf)
         if ev_races:
             print(ev.place)
             for er in ev_races:
                 er_info = [str(er.date), str(er.gender), er.event_type.value]
-                if len(er.runs) and Status.Cancelled not in er.status:
+                if len(er.runs) and Status.CANCELLED not in er.status:
                     if not all(
                         [not r.status or r.status == RunStatus.OfficialResults for r in er.runs]
                     ):

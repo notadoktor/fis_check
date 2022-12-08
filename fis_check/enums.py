@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import Enum, IntFlag, auto
 from typing import List, Union, overload
 
@@ -171,6 +173,10 @@ class EventType(str, Enum):
     PGS = "Parallel Giant Slalom"
     TP = "Team Parallel"
 
+    @property
+    def single_run(self) -> bool:
+        return self in [self.SG, self.DH]
+
     def __str__(self) -> str:
         return self.value
 
@@ -187,7 +193,7 @@ class RunStatus(str, Enum):
 
 class NiceFlag(IntFlag):
     @property
-    def contents(self) -> List["NiceFlag"]:
+    def contents(self):
         if self.is_compound:
             all_flags = []
             for flag_name, flag_obj in self.__class__.__members__.items():
@@ -208,22 +214,24 @@ class NiceFlag(IntFlag):
     def __str__(self) -> str:
         if self.is_compound:
             return ", ".join([str(f) for f in self.contents])
-        return self.name
+        return self.name or ""
 
 
 class Gender(NiceFlag):
     NA = 0
     M = auto()
     W = auto()
-    All = M | W
+    ALL = M | W
+    A = ALL
+    F = W
 
     def __str__(self) -> str:
-        return "" if self.name == "All" else self.name
+        return "" if self is Gender.ALL else self.name
 
 
 class Status(NiceFlag):
-    Pending = 0
-    ResultsAvailable = auto()
-    PDFAvailable = auto()
-    CheckChanges = auto()
-    Cancelled = auto()
+    PENDING = 0
+    RESULTS_AVAILABLE = auto()
+    PDF_AVAILABLE = auto()
+    CHECK_CHANGES = auto()
+    CANCELLED = auto()

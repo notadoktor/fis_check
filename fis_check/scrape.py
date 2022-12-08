@@ -4,28 +4,27 @@ import datetime
 import logging
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, cast
 from urllib.parse import parse_qsl, urlencode, urlparse
-from bs4.element import PageElement, Tag
 
 import requests
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString, PageElement, Tag
 
-from .enums import Category, Country, SectorCode, EventType, Gender, RunStatus, Status
+from .enums import Category, Country, EventType, Gender, RunStatus, SectorCode, Status
 from .util import Cache, RaceFilter, merge_status, tz_cet, tz_local
-
 
 hidden_class = r"hidden-[^-\s]+?-up"
 
 TODAY = datetime.date.today()
-DEFAULT_SEASON = str(TODAY.year) if TODAY.month < 9 else str(TODAY.year - 1)
+DEFAULT_SEASON = str(TODAY.year) if TODAY.month < 9 else str(TODAY.year + 1)
 DEFAULT_SECTORCODE = SectorCode.AL
 DEFAULT_CATEGORY = Category.WC
 
 
 class EventNotFound(Exception):
     def __init__(
-        self, event_id: str, season_code: str, sector_code: SectorCode, msg: str = None
+        self, event_id: str, season_code: str, sector_code: SectorCode, msg: Optional[str] = None
     ) -> None:
         if msg is None:
             msg = f"Unable to find an event matching event_id={event_id} season_code={season_code} sector_code={sector_code}"
@@ -49,7 +48,7 @@ class RacerNotFound(Exception):
 
 # TODO: replace with mixin for scrape objects that handles caching / fetching with self values
 def get_body(
-    url: str, params: Dict[str, Any] = {}, cache: Cache = None, skip_cache: bool = False
+    url: str, params: Dict[str, Any] = {}, cache: Optional[Cache] = None, skip_cache: bool = False
 ) -> BeautifulSoup:
     str_params = {str(k): str(v) for k, v in params.items()}
     if params:
@@ -90,9 +89,9 @@ def visible_a(tag) -> bool:
     )
 
 
-def visible_div(tag) -> bool:
+def visible_div(tag: Optional[Tag]):
     return (
-        tag
+        bool(tag)
         and tag.name == "div"
         and (
             not tag.has_attr("class") or not any([re.match(hidden_class, c) for c in tag["class"]])
@@ -101,7 +100,7 @@ def visible_div(tag) -> bool:
 
 
 def get_comp_id(url: str) -> str:
-    """ pulls the competitor ID out of the url from a race result row """
+    """pulls the competitor ID out of the url from a race result row"""
     parts = urlparse(url)
     qs = dict(parse_qsl(parts.query))
     return qs["competitorid"]
@@ -184,6 +183,8 @@ class Calendar:
                 logging.error("Could not find the calendar form")
                 exit(1)
 
+            assert isinstance(form, Tag)
+
             # grab inputs with defaults/restrictions
             for i in form.find_all("input"):
                 self._options[i["id"]] = {
@@ -233,7 +234,7 @@ class Calendar:
                 raise e
         else:
             # one or multiple days in the same month
-            date_str = date_tag.string
+            date_str = str(date_tag.string)
             logging.debug(f"Same month: {date_str}")
             days, month, year = date_str.split()
             if "-" in days:
@@ -278,20 +279,23 @@ class Calendar:
             cal = cal_page.find(
                 "div", attrs={"id": "calendarloadcontainer", "class": "section__body"}
             )
-            cal_header = [
-                d.string
-                for d in cal.find("div", attrs={"class": "table__head"}).div.div.div.children
-                if visible_div(d)
-            ]
+            assert isinstance(cal, Tag)
+            header_obj = cast(
+                Tag, cal.find("div", attrs={"class": "table__head"})
+            ).div.div.div.children
+            assert isinstance(header_obj, Tag)
 
-            cal_body = cal.find("div", attrs={"id": "calendardata", "class": "tbody"})
+            cal_header = [d.string for d in header_obj.div.div.div.children if visible_div(d)]  # type: ignore
+
+            cal_body = cast(Tag, cal.find("div", attrs={"id": "calendardata", "class": "tbody"}))
             events: List[Event] = []
             for cal_row in cal_body.children:
                 if cal_row.name != "div":
                     continue
-                row_data = cal_row.find("div", attrs={"class": "g-row"})
+                assert isinstance(cal_row, Tag)
+                row_data = cast(Tag, cast(Tag, cal_row).find("div", attrs={"class": "g-row"}))
                 event_raw = dict(zip(cal_header, [c for c in row_data.children if visible_a(c)]))
-                event_data = {"id": cal_row["id"]}
+                event_data: dict[str, Any] = {"id": cal_row["id"]}
                 logging.debug(f"processing event_id {event_data['id']}")
                 event_data["status"] = merge_status(
                     [s["title"] for s in event_raw["Status"].find_all("span")]
@@ -326,12 +330,17 @@ class Calendar:
                     f"categories: {', '.join([str(c) for c in event_data['categories']])}"
                 )
 
-                if " • " in evs:
-                    event_data["event_types"] = [
-                        EventType[re.sub(r"^\dx", "", k)] for k in evs.split(" • ")
-                    ]
-                else:
-                    event_data["event_types"] = [EventType[re.sub(r"^\dx", "", evs)]]
+                for ev_sep in [" • ", " "]:
+                    if not event_data.get("event_types") and ev_sep in evs:
+                        event_data["event_types"] = [
+                            EventType[re.sub(r"^\dx", "", k)] for k in evs.split(ev_sep)
+                        ]
+                if not event_data.get("event_types"):
+                    try:
+                        event_data["event_types"] = [EventType[re.sub(r"^\dx", "", evs)]]
+                    except KeyError:
+                        breakpoint()
+                        raise
                 logging.debug(
                     f"event_types: {', '.join([str(et) for et in event_data['event_types']])}"
                 )
@@ -383,11 +392,11 @@ class Event:
         from_calendar: bool = False,
         **kwargs,
         # dates: List[datetime.date] = None,
-        # place: str = None,
-        # country: Country = None,
+        # place: Optional[str] = None,
+        # country: Optional[Country] = None,
         # categories: Sequence[Category] = None,
         # event_types: Sequence[EventType] = None,
-        # gender: Gender = None,
+        # gender: Optional[Gender] = None,
         # season_code: str = DEFAULT_SEASON,
         # sector_code: SectorCode = SectorCode.AL,
         # status: Status = Status(0),
@@ -414,7 +423,7 @@ class Event:
                 "sectorcode": str(self.sector_code),
             }
             event_body = get_body(self.url, url_params, skip_cache=skip_cache)
-            self.place = event_body.find("h1", attrs={"class": "event-header__name"}).string.strip()
+            self.place = event_body.find("h1", attrs={"class": "event-header__name"}).string.strip()  # type: ignore
             country = re.search(r"\(([A-Z]{3})\)$", self.place)
             if country:
                 self.country = Country[country.group(1)]
@@ -435,7 +444,7 @@ class Event:
                 event_ets.add(r.event_type)
                 self.status |= r.status
 
-            self.gender = event_genders.pop() if len(event_genders) == 1 else Gender.All
+            self.gender = event_genders.pop() if len(event_genders) == 1 else Gender.ALL
             self.dates = sorted(event_dates)
             self.categories = sorted(event_cats)
             self.event_types = sorted(event_ets)
@@ -466,6 +475,7 @@ class Event:
 
         event_page = get_body(self.url, event_qs, skip_cache=skip_cache)
         race_table = event_page.find("div", attrs={"class": "table_pb"})
+        assert isinstance(race_table, Tag)
         header_obj, subheader_obj = [
             d.div.div for d in race_table.find_all("div", attrs={"class": "thead"})
         ]
@@ -480,7 +490,8 @@ class Event:
 
         all_races: List[Race] = []
         body_obj = race_table.find("div", attrs={"class": "table__body"})
-        for day_obj in [d.div.div.div for d in body_obj.children if d.name == "div"]:
+        assert isinstance(body_obj, Tag)
+        for day_obj in [d.div.div.div for d in body_obj.children if d.name == "div"]:  # type: ignore
             race_raw = dict(
                 zip(header, [tag for tag in day_obj.children if visible_a(tag) or visible_div(tag)])
             )
@@ -494,11 +505,18 @@ class Event:
             race_args["status"] = merge_status(
                 [s["title"] for s in race_raw["Status"].find_all("span")]
             )
-            race_args["date"] = (
-                datetime.datetime.strptime(race_raw["Date"].div.div.div.string, "%d %b")
-                .replace(year=int(self.season_code))
-                .date()
-            )
+            raw_date_str: str = race_raw["Date"].div.div.div.string
+            try:
+                date_str = datetime.datetime.strptime(raw_date_str, "%d %b %Y")
+            except ValueError:
+                try:
+                    date_str = datetime.datetime.strptime(raw_date_str, "%d %b")
+                except ValueError:
+                    logging.error(f"Cannot parse date: {raw_date_str}s")
+                    raise
+
+            race_args["date"] = date_str.replace(year=int(self.season_code)).date()
+
             if race_args["date"].month > 7:
                 race_args["date"] = race_args["date"].replace(year=race_args["date"].year - 1)
 
@@ -509,9 +527,18 @@ class Event:
                 # if <div>, save link result URL and extract codex from deeper divs
                 race_args["live_url"] = race_raw["Codex"].a["href"]
                 race_args["codex"] = str(race_raw["Codex"].a.div.div.div.string)
-            race_args["event_type"] = EventType(list(race_raw["Event"].stripped_strings)[0])
+            ev_type: str = list(race_raw["Event"].stripped_strings)[0]
+            if ev_type not in EventType.__members__.values():
+                logging.info(f"Unknown event type: {ev_type}")
+                continue
+            race_args["event_type"] = EventType(ev_type)
             race_args["category"] = Category[race_raw["Category"].string]
-            race_args["gender"] = Gender[list(race_raw["Gender"].stripped_strings)[0]]
+            gender_str = list(race_raw["Gender"].stripped_strings)[0]
+            if gender_str not in Gender.__members__.keys():
+                logging.info(f"Unknown gender value: {gender_str}")
+                breakpoint()
+                raise
+            race_args["gender"] = Gender[gender_str]
             all_run_info = list(race_raw["Runs"].find_all("div", attrs={"class": "g-row"}))
             if all_run_info:
                 race_args["runs"] = []
@@ -573,8 +600,8 @@ class Race:
         gender: Gender,
         status: Status,
         runs: List["RaceRun"],
-        comments: str = None,
-        live_url: str = None,
+        comments: Optional[str] = None,
+        live_url: Optional[str] = None,
         sector_code: SectorCode = DEFAULT_SECTORCODE,
     ) -> None:
         self.id = id
@@ -615,20 +642,21 @@ class Race:
             if f.live_url != bool(self.live_url):
                 logging.info(f"{self} failed live_url filter")
                 return False
-        if Status.Cancelled & self.status and (not f.status or Status.Cancelled not in f.status):
+        if Status.CANCELLED & self.status and (not f.status or Status.CANCELLED not in f.status):
             logging.info(f"{self} failed: cancelled")
             return False
         if f.status and not self.status & f.status:
             logging.debug(f"{self} failed status filter: {self.status} & {f.status}")
+            breakpoint()
             return False
         return True
 
     def results(self, top: int = 10, skip_cache: bool = False) -> List["RaceResult"]:
-        if Status.Cancelled in self.status:
+        if Status.CANCELLED in self.status:
             logging.error(f"No results, race was cancelled")
             return []
 
-        self.load_results(skip_cache)
+        self.load_results(True)
         if len(self._results) >= top:
             return self._results[:top]
         else:
@@ -642,20 +670,12 @@ class Race:
             qs = {"raceid": self.id, "sectorcode": str(self.sector_code)}
             result_body = get_body(RaceResult.url, qs)
 
-            result_table = result_body.find("div", id="events-info-results").div
-            result_rows = [a for a in result_table.children if a.name == "a"]
-            header = [
-                "rank",
-                "bib",
-                "FIS code",
-                "name",
-                "birth year",
-                "nation",
-                "time",
-                "difference",
-                "FIS points",
-                "cup points",
-            ]
+            result_table = cast(Tag, result_body.find("div", id="events-info-results")).div
+            result_rows: list[PageElement] = [a for a in result_table.children if a.name == "a"]
+            if self.event_type.single_run:
+                header = SPEED_HEADER
+            else:
+                header = TECH_HEADER
             all_results = []
             for row in result_rows:
                 row_cols = row.div.div
@@ -684,7 +704,7 @@ class Race:
                     ["DNF", "DNS"],
                     [
                         d.div
-                        for d in result_table.parent.next_siblings
+                        for d in result_table.parent.next_siblings  # type: ignore
                         if d.name == "div" and "table__body" in d["class"]
                     ],
                 )
@@ -696,11 +716,13 @@ class Race:
                     if a.name == "a" and "table-row" in a["class"]
                 ]
                 for row in dq_list:
-                    bib, fis_code, name, birth_year, nation = [
+                    cols = [
                         list(d.stripped_strings)[0]
                         for d in row.children
                         if d.name == "div" and list(d.stripped_strings)
                     ]
+                    bib, fis_code, name, birth_year, nation = cols[:5]
+
                     rr_attrs: Dict[str, Any] = {
                         "race_id": self.id,
                         "rank": dq_ranks[dq_type],
@@ -731,6 +753,34 @@ class Race:
         return [r for r in self._results if r.rank == 999]
 
 
+SPEED_HEADER = [
+    "rank",
+    "bib",
+    "FIS code",
+    "name",
+    "birth year",
+    "nation",
+    "time",
+    "difference",
+    "FIS points",
+    "cup points",
+]
+TECH_HEADER = [
+    "rank",
+    "bib",
+    "FIS code",
+    "name",
+    "birth year",
+    "nation",
+    "run 1",
+    "run 2",
+    "tot. time",
+    "diff. time",
+    "FIS points",
+    "cup points",
+]
+
+
 class RaceRun:
     run: int
     race_id: str
@@ -743,10 +793,10 @@ class RaceRun:
         self,
         run: int,
         race_id: str,
-        cet: datetime.time = None,
-        loc: datetime.time = None,
-        status: RunStatus = None,
-        info: str = None,
+        cet: Optional[datetime.time] = None,
+        loc: Optional[datetime.time] = None,
+        status: Optional[RunStatus] = None,
+        info: Optional[str] = None,
     ) -> None:
         self.run = run
         self.race_id = race_id
@@ -788,12 +838,12 @@ class RaceResult:
         difference: str,
         name: str,
         nation: Country,
-        fis_points: float = None,
-        cup_points: int = None,
-        racer_id: str = None,
-        birth_year: int = None,
-        fis_code: str = None,
-        racer: Racer = None,
+        fis_points: Optional[float] = None,
+        cup_points: Optional[int] = None,
+        racer_id: Optional[str] = None,
+        birth_year: Optional[int] = None,
+        fis_code: Optional[str] = None,
+        racer: Optional[Racer] = None,
     ) -> None:
         self.rank = rank
         self.race_id = race_id
