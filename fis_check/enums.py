@@ -189,6 +189,7 @@ class RunStatus(str, Enum):
     InProgress = "In Progress"
     OfficialResults = "Official Results"
     OfficialResult = OfficialResults
+    UnofficialListOfCompetitors = "Unofficial List of Competitors"
 
 
 class NiceFlag(IntFlag):

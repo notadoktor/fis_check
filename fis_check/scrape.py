@@ -283,9 +283,8 @@ class Calendar:
             header_obj = cast(
                 Tag, cal.find("div", attrs={"class": "table__head"})
             ).div.div.div.children
-            assert isinstance(header_obj, Tag)
 
-            cal_header = [d.string for d in header_obj.div.div.div.children if visible_div(d)]  # type: ignore
+            cal_header = [d.string for d in header_obj if visible_div(d)]  # type: ignore
 
             cal_body = cast(Tag, cal.find("div", attrs={"id": "calendardata", "class": "tbody"}))
             events: List[Event] = []
@@ -529,7 +528,8 @@ class Event:
                 race_args["codex"] = str(race_raw["Codex"].a.div.div.div.string)
             ev_type: str = list(race_raw["Event"].stripped_strings)[0]
             if ev_type not in EventType.__members__.values():
-                logging.info(f"Unknown event type: {ev_type}")
+                if "training" not in ev_type.lower():
+                    logging.info(f"Unknown event type: {ev_type}")
                 continue
             race_args["event_type"] = EventType(ev_type)
             race_args["category"] = Category[race_raw["Category"].string]
@@ -558,19 +558,20 @@ class Event:
                     run["race_id"] = race_args["id"]
                     run["run"] = int(re.sub(r"\D", "", run_raw["run"]))
 
-                    if run_raw["cet"] and ":" in run_raw["cet"]:
+                    if run_raw.get("cet") and ":" in run_raw["cet"]:
                         cet_hour, cet_minute = [int(t) for t in run_raw["cet"].split(":")]
                         run["cet"] = datetime.time(cet_hour, cet_minute, tzinfo=tz_cet)
                     else:
                         run["cet"] = None
 
-                    if run_raw["loc"] and ":" in run_raw["loc"]:
+                    if run_raw.get("loc") and ":" in run_raw["loc"]:
                         loc_hour, loc_minute = [int(t) for t in run_raw["loc"].split(":")]
                         run["loc"] = datetime.time(loc_hour, loc_minute, tzinfo=tz_local)
                     else:
                         run["loc"] = None
 
                     if run_raw.get("status"):
+                        status_str = run_raw["status"].title().replace(" ", "")
                         run["status"] = RunStatus[run_raw["status"].title().replace(" ", "")]
                     else:
                         run["status"] = None
@@ -647,7 +648,7 @@ class Race:
             return False
         if f.status and not self.status & f.status:
             logging.debug(f"{self} failed status filter: {self.status} & {f.status}")
-            breakpoint()
+            # breakpoint()
             return False
         return True
 
